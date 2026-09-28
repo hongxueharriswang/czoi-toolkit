@@ -1,8 +1,6 @@
 """AtomicZone: a leaf subsystem (Z_z = empty)."""
 from __future__ import annotations
 
-from typing import Optional
-
 from .base import ZoneBase
 
 
@@ -12,8 +10,8 @@ class AtomicZone(ZoneBase):
     def __init__(
         self,
         name: str,
-        parent: Optional[ZoneBase] = None,
-        properties: Optional[dict] = None,
+        parent: ZoneBase | None = None,
+        properties: dict | None = None,
     ) -> None:
         super().__init__(name, parent, properties)
 

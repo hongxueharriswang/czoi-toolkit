@@ -10,9 +10,8 @@ Paper §3, item 9.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Optional
 
 from ..core.types import Decision
 from ..operations.operation import Operation
@@ -67,13 +66,13 @@ class PermissionEngine:
         self._cache: dict[tuple[int, int, int], Decision] = {}
         self._stats = {"hits": 0, "misses": 0, "parent_lookups": 0, "denies": 0}
         self.audit: list[DecisionRecord] = []
-        self._neural: Optional[NeuralContribution] = None
+        self._neural: NeuralContribution | None = None
 
     # -----------------------------------------------------------------
     # Configuration
     # -----------------------------------------------------------------
     def set_neural_contribution(
-        self, contribution: Optional[NeuralContribution]
+        self, contribution: NeuralContribution | None
     ) -> None:
         self._neural = contribution
 

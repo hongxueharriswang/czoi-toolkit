@@ -1,14 +1,12 @@
 """Factory: fluent builder for complete CZOA systems."""
 from __future__ import annotations
 
-from typing import Optional
-
 from ..constraints.engine import ConstraintManager
 from ..daemons.manager import DaemonManager
 from ..embedding.service import EmbeddingService
 from ..permissions.engine import PermissionEngine
-from ..zones.base import ZoneBase
 from ..zones.atomic import AtomicZone
+from ..zones.base import ZoneBase
 from ..zones.composite import CompositeZone
 
 
@@ -32,7 +30,7 @@ class CZOABuilder:
     def add_zone(
         self,
         name: str,
-        parent: Optional[ZoneBase] = None,
+        parent: ZoneBase | None = None,
         atomic: bool = False,
     ) -> ZoneBase:
         parent = parent or self.root

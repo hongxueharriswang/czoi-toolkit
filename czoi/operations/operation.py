@@ -5,7 +5,7 @@ preserves the orthogonality of the CZOA 10-tuple (paper §3, item 5).
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from ..properties.store import PropertyStore
 
@@ -16,13 +16,13 @@ if TYPE_CHECKING:
 class Operation:
     """An atomic executable action identified by application.operation."""
 
-    __slots__ = ("name", "application", "properties")
+    __slots__ = ("application", "name", "properties")
 
     def __init__(
         self,
         name: str,
-        application: Optional["Application"] = None,
-        properties: Optional[dict[str, Any]] = None,
+        application: Application | None = None,
+        properties: dict[str, Any] | None = None,
     ) -> None:
         if not name:
             raise ValueError("Operation name must be non-empty")

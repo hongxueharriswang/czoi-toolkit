@@ -6,10 +6,10 @@ zone tree.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
-from ..properties.store import PropertyStore
 from ..operations.operation import Operation
+from ..properties.store import PropertyStore
 
 if TYPE_CHECKING:
     from ..zones.base import ZoneBase
@@ -17,15 +17,19 @@ if TYPE_CHECKING:
 
 class Role:
     __slots__ = (
-        "name", "zone", "base_permissions", "junior_roles", "properties",
+        "base_permissions",
+        "junior_roles",
+        "name",
+        "properties",
+        "zone",
     )
 
     def __init__(
         self,
         name: str,
-        zone: Optional["ZoneBase"] = None,
-        base_permissions: Optional[list[Operation]] = None,
-        properties: Optional[dict] = None,
+        zone: ZoneBase | None = None,
+        base_permissions: list[Operation] | None = None,
+        properties: dict | None = None,
     ) -> None:
         if not name:
             raise ValueError("Role name must be non-empty")
@@ -43,7 +47,7 @@ class Role:
         self.base_permissions.discard(op)
 
     # ---- Seniority -----------------------------------------------
-    def add_junior(self, junior: "Role") -> None:
+    def add_junior(self, junior: Role) -> None:
         self.junior_roles.add(junior)
 
     # ---- Identity ------------------------------------------------

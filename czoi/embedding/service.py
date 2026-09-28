@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import os
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -33,7 +32,7 @@ class EmbeddingService:
             except ImportError:
                 self.model = None
         # Global alignment: a linear map from local to shared space.
-        self.alignment_matrix: Optional[np.ndarray] = None
+        self.alignment_matrix: np.ndarray | None = None
 
     # -----------------------------------------------------------------
     # Local embeddings

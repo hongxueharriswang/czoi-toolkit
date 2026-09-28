@@ -6,9 +6,7 @@ of CZOA_Rec (paper §4).
 from __future__ import annotations
 
 import copy
-from typing import Optional
 
-from .atomic import AtomicZone
 from .base import ZoneBase
 
 
@@ -18,15 +16,15 @@ class CompositeZone(ZoneBase):
     def __init__(
         self,
         name: str,
-        parent: Optional[ZoneBase] = None,
-        properties: Optional[dict] = None,
+        parent: ZoneBase | None = None,
+        properties: dict | None = None,
     ) -> None:
         super().__init__(name, parent, properties)
 
     # -----------------------------------------------------------------
     # Categorical helpers
     # -----------------------------------------------------------------
-    def clone(self, name: Optional[str] = None) -> "CompositeZone":
+    def clone(self, name: str | None = None) -> CompositeZone:
         """Structural clone — deep-copies roles, operations, properties."""
         new = CompositeZone(
             name=name or f"{self.name}_copy",
@@ -55,8 +53,8 @@ class CompositeZone(ZoneBase):
         self,
         other: ZoneBase,
         name: str,
-        parent: Optional[ZoneBase] = None,
-    ) -> "CompositeZone":
+        parent: ZoneBase | None = None,
+    ) -> CompositeZone:
         """Parallel composition (categorical product).
 
         The result is a new CompositeZone containing clones of both

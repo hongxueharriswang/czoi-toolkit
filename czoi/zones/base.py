@@ -6,11 +6,12 @@ Every zone is a full CZOA system (paper §3, Definition 1).
 """
 from __future__ import annotations
 
-from typing import Any, Iterator, Optional
+from collections.abc import Iterator
+from typing import Any
 
-from ..core.exceptions import ZoneError, ZoneContainmentError
-from ..properties.store import PropertyStore
+from ..core.exceptions import ZoneContainmentError, ZoneError
 from ..operations.operation import Operation
+from ..properties.store import PropertyStore
 from ..roles.application import Application
 from ..roles.role import Role
 from ..roles.user import User
@@ -22,14 +23,14 @@ class ZoneBase:
     def __init__(
         self,
         name: str,
-        parent: Optional["ZoneBase"] = None,
-        properties: Optional[dict] = None,
+        parent: ZoneBase | None = None,
+        properties: dict | None = None,
     ) -> None:
         if not name:
             raise ValueError("Zone name must be non-empty")
 
         self.name = name
-        self.parent: Optional[ZoneBase] = parent
+        self.parent: ZoneBase | None = parent
         self.properties = PropertyStore(properties)
 
         # ---- The 10-tuple ---------------------------------------
@@ -50,7 +51,7 @@ class ZoneBase:
     # -----------------------------------------------------------------
     # Z — zones
     # -----------------------------------------------------------------
-    def _register_child(self, child: "ZoneBase") -> None:
+    def _register_child(self, child: ZoneBase) -> None:
         if child.parent is not None and child.parent is not self:
             raise ZoneError(
                 f"{child.name!r} already belongs to {child.parent.name!r}"
@@ -59,7 +60,7 @@ class ZoneBase:
         self.zones[child.name] = child
         self._inherit_into(child)
 
-    def _inherit_into(self, child: "ZoneBase") -> None:
+    def _inherit_into(self, child: ZoneBase) -> None:
         """Containment principle: roles/operations inherit downward."""
         for rn, r in self.roles.items():
             child.roles.setdefault(rn, r)
@@ -70,23 +71,23 @@ class ZoneBase:
         child.constraints = self.constraints
         child.embeddings = self.embeddings
 
-    def add_zone(self, child: "ZoneBase") -> "ZoneBase":
+    def add_zone(self, child: ZoneBase) -> ZoneBase:
         self._register_child(child)
         return child
 
-    def walk(self) -> Iterator["ZoneBase"]:
+    def walk(self) -> Iterator[ZoneBase]:
         yield self
         for c in self.zones.values():
             yield from c.walk()
 
-    def ancestry(self) -> list["ZoneBase"]:
+    def ancestry(self) -> list[ZoneBase]:
         out, node = [], self
         while node is not None:
             out.append(node)
             node = node.parent
         return list(reversed(out))
 
-    def is_ancestor_of(self, other: "ZoneBase") -> bool:
+    def is_ancestor_of(self, other: ZoneBase) -> bool:
         node = other.parent
         while node is not None:
             if node is self:

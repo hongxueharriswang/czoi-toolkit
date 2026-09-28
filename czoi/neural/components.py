@@ -7,8 +7,9 @@ Provides trainable components:
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any
 
 import numpy as np
 
@@ -26,16 +27,16 @@ class Predictor:
     def __init__(
         self,
         name: str,
-        fn: Optional[Callable[[dict[str, Any]], float]] = None,
+        fn: Callable[[dict[str, Any]], float] | None = None,
         threshold: float = 0.5,
-        input_dim: Optional[int] = None,
+        input_dim: int | None = None,
     ) -> None:
         self.name = name
         self.threshold = threshold
         self.fn = fn
         self.input_dim = input_dim
-        self._W: Optional[np.ndarray] = None
-        self._b: Optional[float] = None
+        self._W: np.ndarray | None = None
+        self._b: float | None = None
 
     # -----------------------------------------------------------------
     def fit(

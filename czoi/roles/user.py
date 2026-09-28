@@ -1,7 +1,7 @@
 """User: an authenticated identity with zone affiliation and roles."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from ..properties.store import PropertyStore
 
@@ -10,15 +10,15 @@ if TYPE_CHECKING:
 
 
 class User:
-    __slots__ = ("name", "zone", "roles", "attributes", "credentials")
+    __slots__ = ("attributes", "credentials", "name", "roles", "zone")
 
     def __init__(
         self,
         name: str,
-        zone: Optional["ZoneBase"] = None,
-        roles: Optional[set[str]] = None,
-        attributes: Optional[dict[str, Any]] = None,
-        credentials: Optional[dict[str, Any]] = None,
+        zone: ZoneBase | None = None,
+        roles: set[str] | None = None,
+        attributes: dict[str, Any] | None = None,
+        credentials: dict[str, Any] | None = None,
     ) -> None:
         if not name:
             raise ValueError("User name must be non-empty")

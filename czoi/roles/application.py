@@ -1,10 +1,10 @@
 """Application: a structural module that groups related operations."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
-from ..properties.store import PropertyStore
 from ..operations.operation import Operation
+from ..properties.store import PropertyStore
 
 if TYPE_CHECKING:
     from ..zones.base import ZoneBase
@@ -13,13 +13,13 @@ if TYPE_CHECKING:
 class Application:
     """A deployable module exposing a set of atomic operations."""
 
-    __slots__ = ("name", "zone", "operations", "properties")
+    __slots__ = ("name", "operations", "properties", "zone")
 
     def __init__(
         self,
         name: str,
-        zone: Optional["ZoneBase"] = None,
-        properties: Optional[dict] = None,
+        zone: ZoneBase | None = None,
+        properties: dict | None = None,
     ) -> None:
         if not name:
             raise ValueError("Application name must be non-empty")
