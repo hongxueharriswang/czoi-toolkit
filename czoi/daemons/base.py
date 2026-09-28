@@ -1,80 +1,100 @@
-# czoi/daemons/base.py
-from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, Callable, Awaitable
-from uuid import uuid4
-from czoi.core.types import DaemonAction, Operation
-from czoi.zones.base import Zone
-from czoi_toolkit.czoi.neural.components import AnomalyDetector
+"""Constraint daemons (Δ): continuous monitors with hierarchy."""
+from __future__ import annotations
+
+import logging
+from typing import Any, Optional
+
+from ..core.types import DaemonSignal
+from ..zones.base import ZoneBase
+
+log = logging.getLogger(__name__)
 
 
-class Daemon(ABC):
-    """Abstract base class for continuous monitoring daemons."""
-    def __init__(self, name: str, priority: int = 50):
+class Daemon:
+    """Base class for constraint daemons.
+
+    Hierarchy: child daemons signal upward via `emit_signal`; parents
+    handle signals in `on_signal`.
+    """
+
+    default_interval: float = 1.0
+
+    def __init__(
+        self,
+        name: str,
+        parent: Optional["Daemon"] = None,
+        interval: Optional[float] = None,
+    ) -> None:
         self.name = name
-        self.priority = priority
-        self.id = uuid4()
+        self.zone: Optional[ZoneBase] = None
+        self.parent = parent
+        self.children: list[Daemon] = []
+        self.interval = interval if interval is not None \
+            else self.default_interval
+        self.enabled = True
+        self._last_run: float = 0.0
+        if parent is not None:
+            parent.children.append(self)
 
-    @abstractmethod
-    async def monitor(self, zone: 'Zone', operation: Optional['Operation'],
-                      props: Dict, context: Dict) -> DaemonAction:
-        """Evaluate current state and return suggested action."""
-        pass
+    # -----------------------------------------------------------------
+    def register_with(self, zone: ZoneBase) -> None:
+        self.zone = zone
 
-    @abstractmethod
-    async def act(self, action: DaemonAction, zone: 'Zone',
-                  props: Dict, context: Dict) -> None:
-        """Execute the action (e.g., block, alert, adapt)."""
-        pass
+    # -----------------------------------------------------------------
+    # Lifecycle
+    # -----------------------------------------------------------------
+    def start(self) -> None:
+        self.enabled = True
 
-class SecurityDaemon(Daemon):
-    """Security monitoring daemon using anomaly detection."""
-    def __init__(self, name: str, anomaly_detector: 'AnomalyDetector',
-                 threshold: float = 0.8, priority: int = 100):
-        super().__init__(name, priority)
-        self.anomaly_detector = anomaly_detector
-        self.threshold = threshold
+    def stop(self) -> None:
+        self.enabled = False
 
-    async def monitor(self, zone: 'Zone', operation: Optional['Operation'],
-                      props: Dict, context: Dict) -> DaemonAction:
-        features = {
-            'zone_id': str(zone.id),
-            'op_name': operation.name if operation else 'none',
-            'user_id': str(context.get('user', {}).id) if context.get('user') else 'none',
-            'props': props
-        }
-        risk = await self.anomaly_detector.forward({'features': features})
-        if risk > self.threshold:
-            return DaemonAction.BLOCK
-        elif risk > self.threshold * 0.7:
-            return DaemonAction.CHALLENGE
-        return DaemonAction.ALLOW
+    # -----------------------------------------------------------------
+    # Monitoring
+    # -----------------------------------------------------------------
+    def monitor(self) -> None:
+        """Override in subclasses."""
+        raise NotImplementedError
 
-    async def act(self, action: DaemonAction, zone: 'Zone',
-                  props: Dict, context: Dict) -> None:
-        # Logging and alerts would be implemented here
-        pass
+    def safe_monitor(self) -> None:
+        """Run `monitor` with error isolation."""
+        if not self.enabled:
+            return
+        try:
+            self.monitor()
+        except Exception:
+            log.exception("Daemon %s raised during monitor()", self.name)
 
-class PropertyDaemon(Daemon):
-    """Daemon that enforces property invariants."""
-    def __init__(self, name: str, property_name: str,
-                 condition: Callable[[Any], bool],
-                 corrective_action: Optional[Callable[['Zone', str], Awaitable[None]]] = None,
-                 priority: int = 60):
-        super().__init__(name, priority)
-        self.property_name = property_name
-        self.condition = condition
-        self.corrective_action = corrective_action
+    # -----------------------------------------------------------------
+    # Signals
+    # -----------------------------------------------------------------
+    def emit_signal(self, signal: DaemonSignal, payload: dict) -> None:
+        if self.parent is not None:
+            self.parent.handle_signal(signal, payload, source=self)
 
-    async def monitor(self, zone: 'Zone', operation: Optional['Operation'],
-                      props: Dict, context: Dict) -> DaemonAction:
-        value = props.get(self.property_name)
-        if value is None:
-            return DaemonAction.ALLOW
-        if not self.condition(value):
-            return DaemonAction.ADAPT
-        return DaemonAction.ALLOW
+    def handle_signal(
+        self,
+        signal: DaemonSignal,
+        payload: dict,
+        source: Optional["Daemon"] = None,
+    ) -> None:
+        try:
+            self.on_signal(signal, payload, source)
+        except Exception:
+            log.exception(
+                "Daemon %s raised during on_signal(%s)", self.name, signal
+            )
+        if self.parent is not None:
+            self.parent.handle_signal(signal, payload, source=source)
 
-    async def act(self, action: DaemonAction, zone: 'Zone',
-                  props: Dict, context: Dict) -> None:
-        if action == DaemonAction.ADAPT and self.corrective_action:
-            await self.corrective_action(zone, self.property_name)
+    def on_signal(
+        self,
+        signal: DaemonSignal,
+        payload: dict,
+        source: Optional["Daemon"] = None,
+    ) -> None:
+        """Override in subclasses."""
+
+    # -----------------------------------------------------------------
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self.name!r})"

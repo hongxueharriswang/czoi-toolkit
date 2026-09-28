@@ -1,31 +1,38 @@
-# czoi/roles/user.py
-from dataclasses import dataclass, field
-from typing import Dict, Any, Optional
-from uuid import UUID, uuid4
+"""User: an authenticated identity with zone affiliation and roles."""
+from __future__ import annotations
 
-@dataclass
+from typing import TYPE_CHECKING, Any, Optional
+
+from ..properties.store import PropertyStore
+
+if TYPE_CHECKING:
+    from ..zones.base import ZoneBase
+
+
 class User:
-    """
-    System user with authentication and attributes.
-    """
-    username: str
-    credentials: Dict[str, str]
-    attributes: Dict[str, Any] = field(default_factory=dict)
-    home_zone_id: Optional[UUID] = None
-    active_roles: Dict[UUID, float] = field(default_factory=dict)
-    id: UUID = field(default_factory=uuid4)
+    __slots__ = ("name", "zone", "roles", "attributes", "credentials")
 
-    def activate_role(self, role_id: UUID, level: float = 1.0) -> None:
-        """Activate a role with given level (0-1)."""
-        if 0 <= level <= 1:
-            self.active_roles[role_id] = level
-        else:
-            raise ValueError("Activation level must be between 0 and 1")
+    def __init__(
+        self,
+        name: str,
+        zone: Optional["ZoneBase"] = None,
+        roles: Optional[set[str]] = None,
+        attributes: Optional[dict[str, Any]] = None,
+        credentials: Optional[dict[str, Any]] = None,
+    ) -> None:
+        if not name:
+            raise ValueError("User name must be non-empty")
+        self.name = name
+        self.zone = zone
+        self.roles = set(roles or ())
+        self.attributes = PropertyStore(attributes)
+        self.credentials = credentials or {}
 
-    def deactivate_role(self, role_id: UUID) -> None:
-        """Deactivate a role."""
-        self.active_roles.pop(role_id, None)
+    def has_role(self, name: str) -> bool:
+        return name in self.roles
 
-    def get_active_roles(self) -> Dict[UUID, float]:
-        """Get currently active roles with levels."""
-        return self.active_roles.copy()
+    def __repr__(self) -> str:
+        return f"User({self.name!r}, roles={sorted(self.roles)!r})"
+
+    def __hash__(self) -> int:
+        return id(self)

@@ -1,7 +1,5 @@
-
-sqlalchemy>=1.4
-click>=8.0
-pyyaml>=5.4
+unilog-toolkit>=2.0
 numpy>=1.19
-scikit-learn>=0.24
-pytest>=7.0
+scikit-learn>=1.0        # neural role mining
+sentence-transformers    # semantic embeddings
+networkx>=2.6            # zone-tree utilities

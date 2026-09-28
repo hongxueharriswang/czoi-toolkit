@@ -1,392 +1,523 @@
-# evacuation_simulation.py
+"""
+evacuation.py — Building evacuation simulation.
+
+Reimplemented with the CZOI toolkit (v1.0) against the CZOA theory.
+
+Three scenarios compared:
+  baseline    — 50 evacuees,  3 guides, moderate familiarity, normal speed.
+  guide_rich  — 50 evacuees, 10 guides, lower familiarity, normal speed.
+  panic       — 50 evacuees,  0 guides, very low familiarity, erratic speed.
+
+Exercises:
+  * Recursive zone tree: Building → Floor1/Floor2 → Rooms / Corridors / Exits.
+  * Real CZOI permission calculus (Φ) on every move_to.
+  * UniLog separation-of-duty: Evacuee and Guide are exclusive roles.
+  * Hierarchical daemons (Δ): EvacuationDaemon at root with CongestionDaemon
+    and StuckDaemon as children.
+  * Neural evacuation-speed predictor attached to the Building zone.
+  * Exit throughput model: 5 concurrent queue slots, 2 flushed per tick.
+"""
+from __future__ import annotations
+
 import random
-import math
-from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional
-from czoi.core import System, Zone, Role, User, Application
-from czoi.permission import PermissionEngine
-from czoi.simulation import SimulationEngine
-from czoi.daemon.base import Daemon
-from czoi.storage.sqlalchemy import Storage
-from czoi.constraint.models import Constraint, ConstraintType
-from czoi.constraint.manager import ConstraintManager
 
-# ----------------------------------------------------------------------
-# 1. Define the building zones (hierarchical structure)
-# ----------------------------------------------------------------------
-building = Zone("Building")
-floor1 = Zone("Floor1", parent=building)
-floor2 = Zone("Floor2", parent=building)
+import numpy as np
 
-# Rooms and corridors on floor 1
-room101 = Zone("Room101", parent=floor1)
-room102 = Zone("Room102", parent=floor1)
-corridor1 = Zone("Corridor1", parent=floor1)
-exit1 = Zone("Exit1", parent=floor1)  # main exit on floor 1
-
-# Rooms and corridors on floor 2
-room201 = Zone("Room201", parent=floor2)
-room202 = Zone("Room202", parent=floor2)
-corridor2 = Zone("Corridor2", parent=floor2)
-exit2 = Zone("Exit2", parent=floor2)  # secondary exit on floor 2
-
-# Set capacities (max people per zone)
-for zone in [room101, room102, room201, room202]:
-    zone.capacity = 10
-for zone in [corridor1, corridor2]:
-    zone.capacity = 20
-for zone in [exit1, exit2]:
-    zone.capacity = 5  # exits can only hold a few at a time (bottleneck)
-
-# Staircase connecting floors (optional)
-stairs = Zone("Stairs", parent=building)
-stairs.capacity = 15
-
-# Add all zones to the system
-system = System()
-for zone in [building, floor1, floor2, room101, room102, room201, room202,
-             corridor1, corridor2, exit1, exit2, stairs]:
-    system.add_zone(zone)
-
-# ----------------------------------------------------------------------
-# 2. Define roles
-# ----------------------------------------------------------------------
-evacuee = Role("Evacuee", building)
-guide = Role("Guide", building)
-safety_officer = Role("SafetyOfficer", building)
-system.add_role(evacuee)
-system.add_role(guide)
-system.add_role(safety_officer)
-
-# ----------------------------------------------------------------------
-# 3. Define application and operations
-# ----------------------------------------------------------------------
-evac_app = Application("EvacuationApp")
-move_op = evac_app.add_operation("move_to")
-guide_op = evac_app.add_operation("guide")
-report_op = evac_app.add_operation("report_congestion")
-system.add_application(evac_app)
-
-# Set permissions
-evacuee.grant_permission(move_op)
-guide.grant_permission(guide_op)
-safety_officer.grant_permission(report_op)
-
-# ----------------------------------------------------------------------
-# 4. Create people (users) with attributes
-# ----------------------------------------------------------------------
-def create_people(num_people: int, num_guides: int = 0, base_familiarity: float = 0.5):
-    people = []
-    # Regular evacuees
-    for i in range(num_people):
-        u = User(f"person_{i}")
-        u.attributes["speed"] = random.uniform(0.8, 1.5)  # m/s
-        u.attributes["familiarity"] = base_familiarity + random.uniform(-0.2, 0.2)
-        u.attributes["familiarity"] = max(0.1, min(1.0, u.attributes["familiarity"]))
-        # Start in a random room on floor 1 or 2
-        start_zone = random.choice([room101, room102, room201, room202])
-        u.assign_role(start_zone, evacuee)
-        u.attributes["current_zone"] = start_zone.id
-        people.append(u)
-        system.add_user(u)
-    # Guides
-    for i in range(num_guides):
-        g = User(f"guide_{i}")
-        g.attributes["speed"] = random.uniform(1.0, 1.8)
-        g.attributes["familiarity"] = 1.0  # guides know the best routes
-        # Start in same distribution
-        start_zone = random.choice([room101, room102, room201, room202])
-        g.assign_role(start_zone, guide)
-        g.attributes["current_zone"] = start_zone.id
-        people.append(g)
-        system.add_user(g)
-    return people
-
-# Create initial population: 50 evacuees, 3 guides, base familiarity 0.6
-people = create_people(num_people=50, num_guides=3, base_familiarity=0.6)
-
-# ----------------------------------------------------------------------
-# 5. Define constraints
-# ----------------------------------------------------------------------
-constraint_manager = ConstraintManager()
-
-# Identity constraint: zone occupancy cannot exceed capacity
-def capacity_constraint_eval(context: Dict[str, Any]) -> bool:
-    zone = context.get("zone")
-    if not zone:
-        return True
-    # Count people currently in this zone
-    count = sum(1 for u in people if u.attributes.get("current_zone") == zone.id)
-    return count <= zone.capacity
-
-capacity_constraint = Constraint(
-    name="ZoneCapacity",
-    type=ConstraintType.IDENTITY,
-    target={"type": "zone"},
-    condition="capacity_constraint_eval"  # will be handled by custom evaluator
+from czoi import (
+    Application, CZOABuilder, Daemon, DaemonSignal, Decision,
+    Operation, Predictor, Role, User,
 )
-# In real implementation, we'd register a callable; here we'll enforce in simulation step
 
-# Trigger constraint: if congestion > 80%, alert
-def congestion_trigger(context):
-    zone = context.get("zone")
-    if not zone:
-        return False
-    count = sum(1 for u in people if u.attributes.get("current_zone") == zone.id)
-    return count > 0.8 * zone.capacity
+random.seed(101)
+np.random.seed(101)
 
-# We'll handle triggers via daemons
+# ---- Constants -------------------------------------------------------
+EXIT_CAPACITY = 5
+EXIT_THROUGHPUT = 2
+ROOM_CAPACITY = 10
+CORRIDOR_CAPACITY = 20
+STAIRS_CAPACITY = 15
 
-# ----------------------------------------------------------------------
-# 6. Define daemons
-# ----------------------------------------------------------------------
-class CongestionMonitor(Daemon):
-    """Monitors zone occupancy and logs congestion alerts."""
-    def __init__(self, system, interval=1.0):
-        super().__init__("CongestionMonitor", interval)
-        self.system = system
+# Routing graph (zone name → list of allowed next zones)
+ROUTES = {
+    "Room101":  ["Corridor1"],
+    "Room102":  ["Corridor1"],
+    "Room201":  ["Corridor2"],
+    "Room202":  ["Corridor2"],
+    "Corridor1": ["Exit1"],
+    "Corridor2": ["Exit2", "Stairs"],   # guide/evacuee chooses
+    "Stairs":    ["Corridor1"],
+}
 
-    async def check(self) -> List[str]:
-        alerts = []
-        for zone in self.system.zones:
-            if hasattr(zone, 'capacity'):
-                count = sum(1 for u in people if u.attributes.get("current_zone") == zone.id)
-                if count > 0.8 * zone.capacity:
-                    alerts.append(f"CONGESTION:{zone.name}:{count}/{zone.capacity}")
-        return alerts
+SCENARIOS = {
+    "baseline": {
+        "n_people": 50, "n_guides": 3,
+        "familiarity_range": (0.4, 0.8),
+        "speed_range": (0.8, 1.5),
+    },
+    "guide_rich": {
+        "n_people": 50, "n_guides": 10,
+        "familiarity_range": (0.3, 0.7),
+        "speed_range": (0.8, 1.5),
+    },
+    "panic": {
+        "n_people": 50, "n_guides": 0,
+        "familiarity_range": (0.1, 0.4),
+        "speed_range": (1.2, 2.5),
+    },
+}
 
-    async def execute(self, action: str):
-        if action.startswith("CONGESTION"):
-            self.logger.warning(action)
 
-class SafetyAlertDaemon(Daemon):
-    """Monitors for dangerous situations (e.g., people stuck)."""
-    def __init__(self, system, interval=2.0):
-        super().__init__("SafetyAlert", interval)
-        self.system = system
-        self.previous_positions = {}
+# =====================================================================
+# 1. Build the building
+# =====================================================================
+def build_building():
+    """Construct the zone tree, roles, operations, and constraints."""
+    builder = CZOABuilder("EvacuationSystem")
 
-    async def check(self) -> List[str]:
-        alerts = []
-        for u in people:
-            prev = self.previous_positions.get(u.id)
-            curr = u.attributes.get("current_zone")
-            if prev and prev == curr:
-                # Same zone for two consecutive checks? Might be stuck.
-                # In real implementation, we'd track time.
-                pass
-            self.previous_positions[u.id] = curr
-        return alerts
+    # ---- Zone tree ---------------------------------------------------
+    building = builder.add_zone("Building", parent=builder.root)
+    floor1 = builder.add_zone("Floor1", parent=building)
+    floor2 = builder.add_zone("Floor2", parent=building)
 
-# ----------------------------------------------------------------------
-# 7. Custom simulation engine
-# ----------------------------------------------------------------------
-class EvacuationSimulation(SimulationEngine):
-    def __init__(self, system, permission_engine, storage, people, exit_zones):
-        super().__init__(system, permission_engine, storage)
-        self.people = people
-        self.exit_zones = exit_zones
-        self.evacuation_time = None
-        self.evacuated_count = 0
+    room101  = builder.add_zone("Room101", parent=floor1, atomic=True)
+    room102  = builder.add_zone("Room102", parent=floor1, atomic=True)
+    corridor1 = builder.add_zone("Corridor1", parent=floor1, atomic=True)
+    exit1     = builder.add_zone("Exit1", parent=floor1, atomic=True)
 
-    def step(self, current_time):
-        # Shuffle people to avoid order bias
-        random.shuffle(self.people)
+    room201  = builder.add_zone("Room201", parent=floor2, atomic=True)
+    room202  = builder.add_zone("Room202", parent=floor2, atomic=True)
+    corridor2 = builder.add_zone("Corridor2", parent=floor2, atomic=True)
+    exit2     = builder.add_zone("Exit2", parent=floor2, atomic=True)
 
-        for person in self.people:
-            # Skip if already evacuated
-            current_zone_id = person.attributes.get("current_zone")
-            if not current_zone_id:
+    stairs = builder.add_zone("Stairs", parent=building, atomic=True)
+
+    # ---- Capacities --------------------------------------------------
+    for z in (room101, room102, room201, room202):
+        z.properties.set("capacity", ROOM_CAPACITY, type_hint="int")
+    for z in (corridor1, corridor2):
+        z.properties.set("capacity", CORRIDOR_CAPACITY, type_hint="int")
+    for z in (exit1, exit2):
+        z.properties.set("capacity", EXIT_CAPACITY, type_hint="int")
+        z.properties.set("throughput", EXIT_THROUGHPUT, type_hint="int")
+    stairs.properties.set("capacity", STAIRS_CAPACITY, type_hint="int")
+
+    # ---- Application and operations ---------------------------------
+    app = Application("EvacuationApp", zone=building)
+    move   = app.add_operation(Operation("move_to"))
+    guide  = app.add_operation(Operation("guide"))
+    report = app.add_operation(Operation("report_congestion"))
+    building.add_application(app)
+
+    # ---- Roles -------------------------------------------------------
+    evacuee_role = Role("Evacuee", zone=building, base_permissions=[move])
+    guide_role   = Role("Guide",   zone=building, base_permissions=[move, guide])
+    officer_role = Role("SafetyOfficer", zone=building,
+                        base_permissions=[report, move])
+    building.add_role(evacuee_role)
+    building.add_role(guide_role)
+    building.add_role(officer_role)
+
+    # ---- UniLog separation-of-duty ----------------------------------
+    builder.add_access_constraint("""
+        signature {
+            sort User, Role;
+            constant Evacuee : Role;
+            constant Guide : Role;
+            predicate hasRole(u: User, r: Role);
+        }
+        forall u: User . not (hasRole(u, Evacuee) and hasRole(u, Guide))
+    """)
+
+    zones = {
+        "Building": building, "Floor1": floor1, "Floor2": floor2,
+        "Room101": room101, "Room102": room102, "Corridor1": corridor1,
+        "Exit1": exit1, "Room201": room201, "Room202": room202,
+        "Corridor2": corridor2, "Exit2": exit2, "Stairs": stairs,
+    }
+    ops = {"move": move, "guide": guide, "report": report}
+    return builder, zones, ops
+
+
+# =====================================================================
+# 2. Users along the containment path
+# =====================================================================
+def _register_along_path(user, zone):
+    """Add `user` to `zone` and every ancestor (containment principle)."""
+    for z in zone.ancestry():
+        if user.name not in z.users:
+            z.add_user(user)
+
+
+def create_people(builder, zones, n_people, n_guides,
+                  familiarity_range, speed_range):
+    """Create evacuees and guides, distributed across the four rooms."""
+    rooms = [zones["Room101"], zones["Room102"],
+             zones["Room201"], zones["Room202"]]
+
+    people: list[User] = []
+    for i in range(n_people):
+        start = random.choice(rooms)
+        u = User(
+            f"person_{i}",
+            roles={"Evacuee"},
+            attributes={
+                "speed":        random.uniform(*speed_range),
+                "familiarity":  random.uniform(*familiarity_range),
+                "current_zone": start.name,
+                "evacuated":    False,
+                "ticks_stuck":  0,
+            },
+        )
+        _register_along_path(u, start)
+        people.append(u)
+
+    guides: list[User] = []
+    for i in range(n_guides):
+        start = random.choice(rooms)
+        g = User(
+            f"guide_{i}",
+            roles={"Guide"},
+            attributes={
+                "speed":        random.uniform(1.0, 1.8),
+                "familiarity":  1.0,
+                "current_zone": start.name,
+                "evacuated":    False,
+                "ticks_stuck":  0,
+            },
+        )
+        _register_along_path(g, start)
+        people.append(g)
+        guides.append(g)
+
+    return people, guides
+
+
+# =====================================================================
+# 3. Neural evacuation-speed predictor
+# =====================================================================
+def build_evacuation_predictor() -> Predictor:
+    """Predicts P(fast evacuation | familiarity, speed, has_guide).
+
+    Synthetic ground truth: a person with high familiarity, high speed,
+    or an accompanying guide evacuates quickly.
+    """
+    rng = np.random.default_rng(7)
+    n = 800
+    fam       = rng.uniform(0.0, 1.0, n)
+    spd_norm  = rng.uniform(0.5, 2.5, n) / 2.5
+    has_guide = (rng.random(n) < 0.2).astype(float)
+
+    X = np.column_stack([fam, spd_norm, has_guide])
+    logits = 4.0 * fam + 2.0 * spd_norm + 3.0 * has_guide - 3.5
+    probs = 1.0 / (1.0 + np.exp(-logits))
+    y = (probs > 0.5).astype(float)
+
+    predictor = Predictor("evac_fast", threshold=0.5)
+    predictor.fit(X, y, epochs=800, lr=0.5)
+    return predictor
+
+
+# =====================================================================
+# 4. Daemons (Δ)
+# =====================================================================
+class CongestionDaemon(Daemon):
+    """Warns when a zone's occupancy exceeds a fraction of its capacity."""
+
+    def __init__(self, sim, threshold: float = 0.8, parent=None):
+        super().__init__("CongestionDaemon", parent=parent, interval=2.0)
+        self.sim = sim
+        self.threshold = threshold
+
+    def monitor(self):
+        for name, zone in self.sim.zones.items():
+            if name in ("Building", "Floor1", "Floor2"):
                 continue
-            current_zone = self.system.get_zone(current_zone_id)
-            if current_zone in self.exit_zones:
-                continue  # already safe
+            cap = zone.properties.get("capacity", 0)
+            if cap <= 0:
+                continue
+            occ = self.sim.occupancy(name)
+            if occ > self.threshold * cap:
+                self.emit_signal(
+                    DaemonSignal.STATE_WARNING,
+                    {"zone": name, "occupancy": occ, "capacity": cap},
+                )
 
-            # Determine next zone based on familiarity and role
-            next_zone = self.choose_next_zone(person, current_zone)
 
-            if next_zone:
-                # Check capacity of next zone
-                current_occupancy = sum(1 for p in self.people
-                                        if p.attributes.get("current_zone") == next_zone.id)
-                if current_occupancy < next_zone.capacity:
-                    # Move person
-                    person.attributes["current_zone"] = next_zone.id
-                    # Update role assignment (for permission engine)
-                    # Remove old zone assignment, add new
-                    # For simplicity, we'll just track via attributes
+class StuckDaemon(Daemon):
+    """Signals STATE_CRITICAL for any person stuck too long."""
 
-                    self.logs.append({
-                        "timestamp": current_time.isoformat(),
-                        "person": person.username,
-                        "from": current_zone.name,
-                        "to": next_zone.name,
-                        "role": "guide" if "guide" in person.username else "evacuee"
-                    })
+    def __init__(self, sim, max_ticks: int = 30, parent=None):
+        super().__init__("StuckDaemon", parent=parent, interval=5.0)
+        self.sim = sim
+        self.max_ticks = max_ticks
 
-                    # Check if evacuated
-                    if next_zone in self.exit_zones:
-                        self.evacuated_count += 1
-                        if self.evacuation_time is None:
-                            self.evacuation_time = current_time
+    def monitor(self):
+        for p in self.sim.people:
+            if p.attributes.get("evacuated"):
+                continue
+            ticks = p.attributes.get("ticks_stuck", 0)
+            if ticks >= self.max_ticks:
+                self.emit_signal(
+                    DaemonSignal.STATE_CRITICAL,
+                    {"person": p.name,
+                     "zone":   p.attributes.get("current_zone"),
+                     "ticks":  ticks},
+                )
 
-        # Stop simulation if all evacuated or time limit reached
-        if self.evacuated_count == len(self.people):
-            self.running = False
 
-    def choose_next_zone(self, person, current_zone):
-        """Decide next zone based on familiarity and role."""
-        # Simple deterministic logic based on building layout
-        # In real model, this would be a graph search; here we hardcode paths.
-        if current_zone.name == "Room101":
-            return self.system.get_zone_by_name("Corridor1")
-        elif current_zone.name == "Room102":
-            return self.system.get_zone_by_name("Corridor1")
-        elif current_zone.name == "Room201":
-            return self.system.get_zone_by_name("Corridor2")
-        elif current_zone.name == "Room202":
-            return self.system.get_zone_by_name("Corridor2")
-        elif current_zone.name == "Corridor1":
-            # Choose exit based on familiarity
-            if "guide" in person.username:
-                # Guides know which exit is less congested
-                count1 = sum(1 for p in self.people if p.attributes.get("current_zone") == self.exit_zones[0].id)
-                count2 = sum(1 for p in self.people if p.attributes.get("current_zone") == self.exit_zones[1].id)
-                return self.exit_zones[0] if count1 <= count2 else self.exit_zones[1]
-            else:
-                # Evacuees follow familiarity: higher familiarity -> use main exit (exit1)
-                if person.attributes["familiarity"] > 0.7:
-                    return self.exit_zones[0]  # main exit
-                else:
-                    # Might go to stairs or other exit
-                    if random.random() < 0.5:
-                        return self.exit_zones[1]  # secondary exit
-                    else:
-                        return self.system.get_zone_by_name("Stairs")
-        elif current_zone.name == "Corridor2":
-            # Similar logic for floor 2
-            if "guide" in person.username:
-                count1 = sum(1 for p in self.people if p.attributes.get("current_zone") == self.exit_zones[0].id)
-                count2 = sum(1 for p in self.people if p.attributes.get("current_zone") == self.exit_zones[1].id)
-                return self.exit_zones[1] if count2 <= count1 else self.exit_zones[0]
-            else:
-                if person.attributes["familiarity"] > 0.7:
-                    return self.exit_zones[1]
-                else:
-                    return self.system.get_zone_by_name("Stairs")
-        elif current_zone.name == "Stairs":
-            # Stairs lead to floor1 corridor
-            return self.system.get_zone_by_name("Corridor1")
-        else:
+class EvacuationDaemon(Daemon):
+    """Root daemon: aggregates child signals and tracks progress."""
+
+    def __init__(self, parent=None):
+        super().__init__("EvacuationDaemon", parent=parent, interval=3.0)
+        self.warnings:  list[tuple] = []
+        self.criticals: list[tuple] = []
+
+    def on_signal(self, signal, payload, source=None):
+        src = source.name if source else "?"
+        if signal is DaemonSignal.STATE_WARNING:
+            self.warnings.append((src, payload))
+        elif signal is DaemonSignal.STATE_CRITICAL:
+            self.criticals.append((src, payload))
+
+
+# =====================================================================
+# 5. Simulation
+# =====================================================================
+class EvacuationSimulation:
+    """Zone-by-zone evacuation with real CZOI permission checks.
+
+    Each tick:
+      1. Exits flush up to `throughput` queued evacuees (marks them
+         `evacuated` and removes them from occupancy).
+      2. Every remaining person tries to advance along a route,
+         gated by both inline capacity and the real Φ engine.
+    """
+
+    def __init__(self, builder, zones, ops, people, guides, predictor):
+        self.builder   = builder
+        self.zones     = zones
+        self.ops       = ops
+        self.people    = people
+        self.guides    = guides
+        self.predictor = predictor
+        self.time = 0.0
+        self.evacuated_count = 0
+        self.evacuation_time = None
+        self.logs: list[tuple] = []
+
+    # -----------------------------------------------------------------
+    def occupancy(self, zone_name: str) -> int:
+        return sum(
+            1 for p in self.people
+            if p.attributes.get("current_zone") == zone_name
+            and not p.attributes.get("evacuated")
+        )
+
+    # -----------------------------------------------------------------
+    def step(self, dt: float = 1.0) -> None:
+        self.time += dt
+        engine   = self.builder.permission_engine
+        building = self.zones["Building"]
+
+        # ---- 1. Process exits (throughput) -------------------------
+        for ex_name in ("Exit1", "Exit2"):
+            ex = self.zones[ex_name]
+            throughput = ex.properties.get("throughput", 1)
+            queue = [
+                p for p in self.people
+                if p.attributes.get("current_zone") == ex_name
+                and not p.attributes.get("evacuated")
+            ]
+            for p in queue[:throughput]:
+                p.attributes.set("evacuated",    True)
+                p.attributes.set("current_zone", None)
+                self.evacuated_count += 1
+                if (self.evacuated_count == len(self.people)
+                        and self.evacuation_time is None):
+                    self.evacuation_time = self.time
+                self._log("evacuated", p.name)
+
+        # ---- 2. Each person attempts one move ----------------------
+        random.shuffle(self.people)
+        for p in self.people:
+            if p.attributes.get("evacuated"):
+                continue
+            cur = p.attributes.get("current_zone")
+            if cur is None:
+                continue
+
+            next_zone = self._choose_next(p, cur)
+            if next_zone is None:
+                continue
+
+            # Inline capacity gate
+            cap = next_zone.properties.get("capacity", 999)
+            if self.occupancy(next_zone.name) >= cap:
+                p.attributes.set("ticks_stuck",
+                                 p.attributes.get("ticks_stuck", 0) + 1)
+                continue
+
+            # Real Φ permission check
+            if engine.decide(p, self.ops["move"], building) is not Decision.ALLOW:
+                p.attributes.set("ticks_stuck",
+                                 p.attributes.get("ticks_stuck", 0) + 1)
+                continue
+
+            p.attributes.set("current_zone", next_zone.name)
+            p.attributes.set("ticks_stuck", 0)
+            self._log("move", p.name, cur, next_zone.name)
+
+    # -----------------------------------------------------------------
+    def _choose_next(self, person, cur):
+        """Decide the next zone based on routing rules and role."""
+        if cur in ("Exit1", "Exit2"):
+            return None
+        options = ROUTES.get(cur, [])
+        if not options:
             return None
 
-    def get_zone_by_name(self, name):
-        for z in self.system.zones:
-            if z.name == name:
-                return z
-        return None
+        is_guide = person.name.startswith("guide")
 
-# ----------------------------------------------------------------------
-# 8. Run simulations
-# ----------------------------------------------------------------------
-def run_simulation(people_list, exit_zones, max_steps=100, step_seconds=1):
-    """Run a simulation and return results."""
-    # Reset people positions (reassign starting zones if needed)
-    # For simplicity, we assume people list is already set up.
+        # Guides and evacuees in Corridor2 choose between Exit2 and Stairs.
+        if cur == "Corridor2":
+            e1_occ = self.occupancy("Exit1")
+            e2_occ = self.occupancy("Exit2")
+            if is_guide:
+                # Guides know the less congested route.
+                return self.zones["Stairs"] if e1_occ < e2_occ \
+                    else self.zones["Exit2"]
+            # Evacuees use familiarity + neural predictor.
+            fam = person.attributes.get("familiarity", 0.5)
+            spd = person.attributes.get("speed", 1.0) / 2.5
+            p_fast = self.predictor.predict(
+                {"fam": fam, "spd": spd, "guide": 0.0}
+            )
+            if p_fast > 0.5 and fam > 0.4:
+                return self.zones["Exit2"]
+            return self.zones["Stairs"]
 
-    # Create storage (in-memory)
-    storage = Storage("sqlite:///:memory:")
+        return self.zones[options[0]]
 
-    # Permission engine (simplified – all allowed for simulation)
-    class AllowAllEngine(PermissionEngine):
-        def decide(self, user, operation, zone, context=None):
-            return True
+    # -----------------------------------------------------------------
+    def _log(self, event: str, *args) -> None:
+        self.logs.append((round(self.time, 2), event) + tuple(args))
 
-    engine = AllowAllEngine(storage)
 
-    sim = EvacuationSimulation(system, engine, storage, people_list, exit_zones)
-    sim.run(timedelta(seconds=max_steps * step_seconds), step=timedelta(seconds=step_seconds))
+# =====================================================================
+# 6. Scenario runner
+# =====================================================================
+def run_scenario(name, n_people, n_guides, familiarity_range, speed_range,
+                 max_seconds: int = 250):
+    """Build a fresh system, run one scenario, return summary stats."""
+    builder, zones, ops = build_building()
+    people, guides = create_people(
+        builder, zones, n_people, n_guides,
+        familiarity_range, speed_range,
+    )
+    predictor = build_evacuation_predictor()
+    zones["Building"].add_neural("evac_fast", predictor)
 
-    # Collect statistics
-    final_positions = [p.attributes.get("current_zone") for p in people_list]
-    evacuated = sum(1 for z in final_positions if z in [ez.id for ez in exit_zones])
-    time_to_evacuate = sim.evacuation_time
-    logs = sim.logs
+    sim = EvacuationSimulation(
+        builder, zones, ops, people, guides, predictor,
+    )
+
+    # ---- Daemon hierarchy ------------------------------------------
+    root = EvacuationDaemon()
+    congestion = CongestionDaemon(sim, parent=root)
+    stuck      = StuckDaemon(sim, max_ticks=30, parent=root)
+    builder.add_daemon(root)
+    builder.add_daemon(congestion)
+    builder.add_daemon(stuck)
+
+    # ---- Run --------------------------------------------------------
+    for step in range(max_seconds):
+        sim.step(dt=1.0)
+        if step % 5 == 0:
+            builder.daemon_manager.tick()
+        if sim.evacuated_count >= len(people):
+            break
 
     return {
-        "evacuated": evacuated,
-        "total": len(people_list),
-        "evacuation_time": time_to_evacuate,
-        "logs": logs
+        "name":       name,
+        "evacuated":  sim.evacuated_count,
+        "total":      len(people),
+        "time":       sim.evacuation_time,
+        "elapsed":    sim.time,
+        "warnings":   len(root.warnings),
+        "criticals":  len(root.criticals),
+        "denied":     builder.permission_engine.stats()["denies"],
     }
 
-# ----------------------------------------------------------------------
-# Simulation 2.1: Baseline (normal familiarity)
-# ----------------------------------------------------------------------
-print("="*50)
-print("Simulation 2.1: Baseline (moderate familiarity)")
-print("="*50)
 
-people_baseline = create_people(num_people=50, num_guides=3, base_familiarity=0.6)
-exit_list = [exit1, exit2]
-result1 = run_simulation(people_baseline, exit_list, max_steps=200)
-print(f"Evacuated: {result1['evacuated']}/{result1['total']}")
-if result1['evacuation_time']:
-    print(f"Time to last evacuation: {result1['evacuation_time']}")
-else:
-    print("Not all evacuated within simulation time.")
+# =====================================================================
+# 7. Main
+# =====================================================================
+def main() -> None:
+    # ---- Sanity checks ---------------------------------------------
+    builder, zones, ops = build_building()
+    people, guides = create_people(
+        builder, zones, n_people=5, n_guides=2,
+        familiarity_range=(0.5, 0.7), speed_range=(1.0, 1.5),
+    )
+    building = zones["Building"]
+    engine   = builder.permission_engine
+    evacuee  = people[0]
+    guide    = guides[0]
 
-# ----------------------------------------------------------------------
-# Simulation 2.2: Guide effect (more guides, better guidance)
-# ----------------------------------------------------------------------
-print("\n" + "="*50)
-print("Simulation 2.2: Guide effect (more guides)")
-print("="*50)
+    print("Permission sanity check (paper §3, item 9):")
+    print(f"  {evacuee.name:<14} move  :",
+          engine.decide(evacuee, ops["move"], building).name)
+    print(f"  {evacuee.name:<14} guide :",
+          engine.decide(evacuee, ops["guide"], building).name)
+    print(f"  {guide.name:<14} move  :",
+          engine.decide(guide, ops["move"], building).name)
+    print(f"  {guide.name:<14} guide :",
+          engine.decide(guide, ops["guide"], building).name)
 
-people_guides = create_people(num_people=50, num_guides=10, base_familiarity=0.5)  # more guides, lower base familiarity
-result2 = run_simulation(people_guides, exit_list, max_steps=200)
-print(f"Evacuated: {result2['evacuated']}/{result2['total']}")
-if result2['evacuation_time']:
-    print(f"Time to last evacuation: {result2['evacuation_time']}")
-else:
-    print("Not all evacuated within simulation time.")
+    predictor = build_evacuation_predictor()
+    p_high = predictor.predict({"fam": 0.9, "spd": 0.8, "guide": 1.0})
+    p_low  = predictor.predict({"fam": 0.15, "spd": 0.4, "guide": 0.0})
+    print()
+    print(f"P(fast evac) — familiar, guided  : {p_high:.3f}")
+    print(f"P(fast evac) — panicked, alone   : {p_low:.3f}")
+    print()
 
-# ----------------------------------------------------------------------
-# Simulation 2.3: Panic (low familiarity, high speed variability)
-# ----------------------------------------------------------------------
-print("\n" + "="*50)
-print("Simulation 2.3: Panic (low familiarity, high speed variability)")
-print("="*50)
+    # ---- Run scenarios ---------------------------------------------
+    results = []
+    for name, cfg in SCENARIOS.items():
+        print("=" * 60)
+        print(f"Scenario: {name}")
+        print("=" * 60)
+        r = run_scenario(name, **cfg)
+        results.append(r)
 
-# Custom create function for panic
-def create_panic_people(num_people, num_guides=0):
-    people = []
-    for i in range(num_people):
-        u = User(f"panic_person_{i}")
-        u.attributes["speed"] = random.uniform(1.2, 2.5)  # faster but erratic
-        u.attributes["familiarity"] = random.uniform(0.1, 0.4)  # low familiarity
-        start_zone = random.choice([room101, room102, room201, room202])
-        u.assign_role(start_zone, evacuee)
-        u.attributes["current_zone"] = start_zone.id
-        people.append(u)
-        system.add_user(u)
-    return people
+        if r["time"] is not None:
+            print(f"  Evacuated : {r['evacuated']}/{r['total']} "
+                  f"in {r['time']:.1f}s")
+        else:
+            print(f"  Evacuated : {r['evacuated']}/{r['total']} "
+                  f"(not complete after {r['elapsed']:.0f}s)")
+        print(f"  Warnings  : {r['warnings']}")
+        print(f"  Criticals : {r['criticals']}")
+        print(f"  Φ denies  : {r['denied']}")
+        print()
 
-people_panic = create_panic_people(num_people=50, num_guides=0)
-result3 = run_simulation(people_panic, exit_list, max_steps=200)
-print(f"Evacuated: {result3['evacuated']}/{result3['total']}")
-if result3['evacuation_time']:
-    print(f"Time to last evacuation: {result3['evacuation_time']}")
-else:
-    print("Not all evacuated within simulation time.")
+    # ---- Comparison table ------------------------------------------
+    print("=" * 60)
+    print("Comparison")
+    print("=" * 60)
+    header = (f"{'Scenario':<12} {'Evac':>10} {'Time(s)':>10} "
+              f"{'Warn':>6} {'Crit':>6} {'Deny':>6}")
+    print(header)
+    print("-" * len(header))
+    for r in results:
+        t = f"{r['time']:.1f}" if r["time"] is not None else "—"
+        evac = f"{r['evacuated']}/{r['total']}"
+        print(f"{r['name']:<12} {evac:>10} {t:>10} "
+              f"{r['warnings']:>6} {r['criticals']:>6} {r['denied']:>6}")
 
-# ----------------------------------------------------------------------
-# Optional: Start daemons (if running as a long-lived process)
-# ----------------------------------------------------------------------
-# import asyncio
-# async def run_daemons():
-#     monitor = CongestionMonitor(system)
-#     safety = SafetyAlertDaemon(system)
-#     await asyncio.gather(monitor.run(), safety.run())
-# 
-# asyncio.run(run_daemons())
+
+if __name__ == "__main__":
+    main()

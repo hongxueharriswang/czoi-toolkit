@@ -1,10 +1,6 @@
 # czoi/zones/__init__.py
-"""
-Zone hierarchy: atomic and composite zones.
-"""
+from .atomic import AtomicZone
+from .base import ZoneBase
+from .composite import CompositeZone
 
-from czoi.zones.base import Zone
-from czoi.zones.atomic import AtomicZone
-from czoi.zones.composite import CompositeZone
-
-__all__ = ["Zone", "AtomicZone", "CompositeZone"]
+__all__ = ["AtomicZone", "CompositeZone", "ZoneBase"]

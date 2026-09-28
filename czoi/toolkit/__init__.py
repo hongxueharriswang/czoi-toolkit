@@ -1,4 +1,4 @@
 # czoi/toolkit/__init__.py
-from czoi.toolkit.factory import CZOASystem, CZOIToolkit
+from .factory import CZOABuilder
 
-__all__ = ["CZOASystem", "CZOIToolkit"]
+__all__ = ["CZOABuilder"]

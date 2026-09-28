@@ -1,16 +1,42 @@
-# czoi/roles/application.py
-from dataclasses import dataclass, field
-from typing import Set, Dict
-from uuid import UUID, uuid4
+"""Application: a structural module that groups related operations."""
+from __future__ import annotations
 
-@dataclass
+from typing import TYPE_CHECKING, Optional
+
+from ..properties.store import PropertyStore
+from ..operations.operation import Operation
+
+if TYPE_CHECKING:
+    from ..zones.base import ZoneBase
+
+
 class Application:
-    """
-    An application that provides operations in the system.
-    """
-    name: str
-    zone_id: UUID
-    description: str = ""
-    operations: Set[UUID] = field(default_factory=set)  # Operation IDs
-    metadata: Dict[str, str] = field(default_factory=dict)
-    id: UUID = field(default_factory=uuid4)
+    """A deployable module exposing a set of atomic operations."""
+
+    __slots__ = ("name", "zone", "operations", "properties")
+
+    def __init__(
+        self,
+        name: str,
+        zone: Optional["ZoneBase"] = None,
+        properties: Optional[dict] = None,
+    ) -> None:
+        if not name:
+            raise ValueError("Application name must be non-empty")
+        self.name = name
+        self.zone = zone
+        self.operations: dict[str, Operation] = {}
+        self.properties = PropertyStore(properties)
+
+    def add_operation(self, op: Operation) -> Operation:
+        if op.application is not None and op.application is not self:
+            raise ValueError(
+                f"Operation {op.name!r} already belongs to "
+                f"{op.application.name!r}"
+            )
+        op.application = self
+        self.operations[op.name] = op
+        return op
+
+    def __repr__(self) -> str:
+        return f"Application({self.name!r}, ops={len(self.operations)})"

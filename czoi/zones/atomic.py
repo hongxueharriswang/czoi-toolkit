@@ -1,60 +1,24 @@
-# czoi/zones/atomic.py
-from typing import Dict, Any
-from czoi.zones.base import Zone
-from czoi.core.exceptions import PermissionDeniedError, ConstraintViolationError
-from czoi.roles.user import User
-from czoi.operations import Operation
+"""AtomicZone: a leaf subsystem (Z_z = empty)."""
+from __future__ import annotations
 
-class AtomicZone(Zone):
-    """
-    Atomic zone with no embedded CZOA instance.
-    Leaves of the recursion hierarchy.
-    """
+from typing import Optional
 
-    @property
-    def is_composite(self) -> bool:
-        return False
+from .base import ZoneBase
 
-    async def execute(self, operation: 'Operation', user: 'User',
-                      context: Dict) -> Any:
-        """Execute operation directly in this atomic zone."""
-        active_role = context.get('active_role')
-        if not active_role or not self._permission_engine:
-            raise PermissionDeniedError("No active role or permission engine")
 
-        # Check permissions
-        if not await self._permission_engine.check_access(
-            user, operation, self, context
-        ):
-            raise PermissionDeniedError(
-                f"User {user.username} not authorized for {operation.name}"
-            )
+class AtomicZone(ZoneBase):
+    """A zone with no children; the recursion terminates here."""
 
-        # Precondition check
-        state = await self._get_state()
-        if operation.precondition and not operation.precondition(state):
-            raise ConstraintViolationError(f"Precondition failed for {operation.name}")
+    def __init__(
+        self,
+        name: str,
+        parent: Optional[ZoneBase] = None,
+        properties: Optional[dict] = None,
+    ) -> None:
+        super().__init__(name, parent, properties)
 
-        # Execute
-        result = await operation.execute(self, context)
-
-        # Postcondition check
-        if operation.postcondition and not operation.postcondition(state, result):
-            raise ConstraintViolationError(f"Postcondition failed for {operation.name}")
-
-        # Update property store if property changes occurred
-        if self._property_store:
-            for prop in operation.write_properties:
-                if prop in self.properties:
-                    await self._property_store.set(
-                        self, self.properties[prop].name,
-                        self.properties[prop].value, user, active_role, operation
-                    )
-
-        return result
-
-    async def _get_state(self) -> Dict:
-        """Get current property state."""
-        if self._property_store:
-            return await self._property_store.get_all(self)
-        return {p.name: p.value for p in self.properties.values()}
+    def add_zone(self, child: ZoneBase) -> ZoneBase:
+        raise TypeError(
+            f"AtomicZone {self.name!r} cannot have child zones; "
+            "use CompositeZone instead"
+        )

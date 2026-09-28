@@ -1,86 +1,46 @@
-# czoi/operations/operation.py
-from dataclasses import dataclass, field
-from typing import Dict, Set, Any, Callable, Optional
-from uuid import UUID, uuid4 
-from zones.base import Zone
+"""Operation: an atomic executable action.
 
-@dataclass
+Permissions are granted on Operations, never on Applications. This
+preserves the orthogonality of the CZOA 10-tuple (paper §3, item 5).
+"""
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Optional
+
+from ..properties.store import PropertyStore
+
+if TYPE_CHECKING:
+    from ..roles.application import Application
+
+
 class Operation:
-    """
-    An executable operation (method) in the system.
-    
-    Attributes
-    ----------
-    name : str
-        Operation name (unique within application).
-    app_id : UUID
-        ID of the application providing this operation.
-    signature : Dict[str, str]
-        Input/output types mapping.
-    read_properties : Set[UUID]
-        Property IDs that this operation reads.
-    write_properties : Set[UUID]
-        Property IDs that this operation modifies.
-    precondition : Optional[Callable[[Dict], bool]]
-        Boolean function over property state.
-    postcondition : Optional[Callable[[Dict, Any], bool]]
-        Function over (old_state, result) -> bool.
-    property_condition : Optional[str]
-        Expression string for property-based permission.
-    required_role_ids : Set[UUID]
-        Roles that have base permission for this operation.
-    """
-    name: str
-    app_id: UUID
-    signature: Dict[str, str]
-    read_properties: Set[UUID] = field(default_factory=set)
-    write_properties: Set[UUID] = field(default_factory=set)
-    precondition: Optional[Callable[[Dict], bool]] = None
-    postcondition: Optional[Callable[[Dict, Any], bool]] = None
-    property_condition: Optional[str] = None
-    required_role_ids: Set[UUID] = field(default_factory=set)
-    
-    async def execute(self, zone: 'Zone', context: Dict) -> Any:
-        """
-        Execute the operation (to be overridden by application logic).
-        
-        Parameters
-        ----------
-        zone : Zone
-            The zone in which execution occurs.
-        context : Dict
-            Execution context (user, parameters, etc.).
-        
-        Returns
-        -------
-        Any
-            Operation result.
-        """
-    name: str
-    app_id: UUID
-    signature: Dict[str, str] = field(default_factory=dict)
-    read_properties: Set[UUID] = field(default_factory=set)
-    write_properties: Set[UUID] = field(default_factory=set)
-    precondition: Optional[Callable[[Dict], bool]] = None
-    postcondition: Optional[Callable[[Dict, Any], bool]] = None
-    property_condition: Optional[str] = None
-    required_role_ids: Set[UUID] = field(default_factory=set)
-    id: UUID = field(default_factory=uuid4)
+    """An atomic executable action identified by application.operation."""
 
-    async def execute(self, zone: 'Zone', context: Dict) -> Any:
-        """
-        Execute the operation (to be overridden by application logic).
-        
-        Parameters
-        ----------
-        zone : Zone
-            The zone in which execution occurs.
-        context : Dict
-            Execution context (user, parameters, etc.).
-        
-        Returns
-        -------
-        Any
-            Operation result.
-        """
-        raise NotImplementedError("Operation.execute must be overridden by subclass")
+    __slots__ = ("name", "application", "properties")
+
+    def __init__(
+        self,
+        name: str,
+        application: Optional["Application"] = None,
+        properties: Optional[dict[str, Any]] = None,
+    ) -> None:
+        if not name:
+            raise ValueError("Operation name must be non-empty")
+        self.name = name
+        self.application = application
+        self.properties = PropertyStore(properties)
+
+    @property
+    def qualified_name(self) -> str:
+        return self.name if self.application is None \
+            else f"{self.application.name}.{self.name}"
+
+    def __repr__(self) -> str:
+        return f"Operation({self.qualified_name!r})"
+
+    def __hash__(self) -> int:
+        return hash(self.qualified_name)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, Operation) \
+            and self.qualified_name == other.qualified_name

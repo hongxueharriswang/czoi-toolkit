@@ -1,22 +1,4 @@
 # czoi/constraints/__init__.py
-"""
-Constraint system: identity, trigger, goal, access.
-"""
+from .engine import ConstraintManager, CZOIModel
 
-from czoi.constraints.engine import (
-    Constraint,
-    IdentityConstraint,
-    TriggerConstraint,
-    GoalConstraint,
-    AccessConstraint,
-    ConstraintEngine,
-)
-
-__all__ = [
-    "Constraint",
-    "IdentityConstraint",
-    "TriggerConstraint",
-    "GoalConstraint",
-    "AccessConstraint",
-    "ConstraintEngine",
-]
+__all__ = ["CZOIModel", "ConstraintManager"]

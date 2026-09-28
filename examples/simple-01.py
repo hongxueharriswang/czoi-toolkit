@@ -1,72 +1,87 @@
-# example1_basic.py
-from czoi.core import System, Zone, Role, User, Application, Operation
-from czoi.permission import PermissionEngine
-from czoi.storage.sqlalchemy import Storage
+"""
+basic.py — Minimal CZOI example: roles, seniority, permission checks.
 
-# 1. Create system and zones
-system = System()
-root = Zone("Company")
-hr = Zone("HR", parent=root)
-system.add_zone(root)
-system.add_zone(hr)
+Demonstrates:
+  * A Company root zone with an HR child zone.
+  * Two roles with an intra-zone seniority relation.
+  * An application exposing two atomic operations.
+  * Two users, each holding one role.
+  * Real CZOA permission calculus (Φ) on every decision.
+"""
+from czoi import (
+    Application, CZOABuilder, Decision, Operation, Role, User,
+)
 
-# 2. Create roles
-hr_manager = Role("Manager", hr)
-hr_assistant = Role("Assistant", hr)
-hr_assistant.add_senior(hr_manager)  # assistant is junior to manager
-system.add_role(hr_manager)
-system.add_role(hr_assistant)
 
-# 3. Create application and operations
-app = Application("HR System")
-view_employee = app.add_operation("view_employee")
-edit_employee = app.add_operation("edit_employee")
-system.add_application(app)
+# =====================================================================
+# 1. Build the system
+# =====================================================================
+builder = CZOABuilder("Company")
+company = builder.root
+hr = builder.add_zone("HR", parent=company, atomic=True)
 
-# 4. Assign permissions
-hr_assistant.grant_permission(view_employee)
-hr_manager.grant_permission(edit_employee)
+# ---- Roles with an intra-zone seniority relation -------------------
+# The Manager is senior to the Assistant. A manager therefore inherits
+# every permission the assistant holds (paper §3, item 2).
+manager_role   = Role("Manager",   zone=hr)
+assistant_role = Role("Assistant", zone=hr)
+manager_role.add_junior(assistant_role)   # Manager >=_HR Assistant
 
-# 5. Create user and assign role
-alice = User("alice")
-alice.assign_role(hr, hr_assistant)
-system.add_user(alice)
+hr.add_role(manager_role)
+hr.add_role(assistant_role)
 
-# 6. Set up storage (in-memory SQLite)
-storage = Storage("sqlite:///:memory:")
-# Normally we'd save system to storage; for demo we use engine directly with in-memory objects
-# We'll use a simple in-memory permission engine that accesses the system directly
-# For simplicity, we'll just use the permission engine with the system objects manually.
+# ---- Application and operations ------------------------------------
+app = Application("HRSystem", zone=hr)
+view_employee = app.add_operation(Operation("view_employee"))
+edit_employee = app.add_operation(Operation("edit_employee"))
+hr.add_application(app)
 
-# Create a simplified permission engine that uses our in-memory objects
-class SimpleEngine(PermissionEngine):
-    def __init__(self, system):
-        self.system = system
+# ---- Base permissions ----------------------------------------------
+assistant_role.grant(view_employee)
+manager_role.grant(edit_employee)
 
-    def get_effective_permissions(self, role, zone):
-        perms = set(role.base_permissions)
-        for junior in role.junior_roles:
-            perms.update(junior.base_permissions)
-        return perms
+# ---- Users --------------------------------------------------------
+alice = User("alice", roles={"Assistant"})
+bob   = User("bob",   roles={"Manager"})
 
-    def decide(self, user, operation, zone, context=None):
-        if zone.id not in user.zone_role_assignments:
-            return False
-        for role, weight in user.zone_role_assignments[zone.id]:
-            if weight > 0 and operation in self.get_effective_permissions(role, zone):
-                return True
-        return False
+# Containment principle: register at the root first, then the zone.
+company.add_user(alice)
+hr.add_user(alice)
+company.add_user(bob)
+hr.add_user(bob)
 
-engine = SimpleEngine(system)
 
-# 7. Check permissions
-print("Alice attempts to view employee in HR zone:", 
-      engine.decide(alice, view_employee, hr))  # True
-print("Alice attempts to edit employee in HR zone:", 
-      engine.decide(alice, edit_employee, hr))   # False
+# =====================================================================
+# 2. Check permissions
+# =====================================================================
+engine = builder.permission_engine
 
-# 8. Check with manager role
-bob = User("bob")
-bob.assign_role(hr, hr_manager)
-print("Bob attempts to edit employee:", 
-      engine.decide(bob, edit_employee, hr))     # True
+print("Permission checks")
+print("-----------------")
+print(f"alice view_employee  : "
+      f"{engine.decide(alice, view_employee, hr).name}")
+print(f"alice edit_employee  : "
+      f"{engine.decide(alice, edit_employee, hr).name}")
+print(f"bob   view_employee  : "
+      f"{engine.decide(bob,   view_employee, hr).name}")
+print(f"bob   edit_employee  : "
+      f"{engine.decide(bob,   edit_employee, hr).name}")
+print()
+
+# ---- Demonstrate the seniority relation ----------------------------
+# The manager inherits the assistant's permissions. If we grant the
+# assistant a new permission, the manager immediately gains it too.
+print("After assistant_role.grant(view_employee):")
+print(f"  bob view_employee : "
+      f"{engine.decide(bob, view_employee, hr).name}")
+
+# Effective permissions of each role (paper §3, item 9).
+def effective(role):
+    perms = set(role.base_permissions)
+    for junior in role.junior_roles:
+        perms |= junior.base_permissions
+    return sorted(p.qualified_name for p in perms)
+
+print()
+print(f"Assistant effective permissions : {effective(assistant_role)}")
+print(f"Manager   effective permissions : {effective(manager_role)}")

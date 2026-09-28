@@ -1,47 +1,73 @@
-# czoi/daemons/manager.py
+"""DaemonManager: async scheduler for constraint daemons."""
+from __future__ import annotations
+
 import asyncio
-from typing import Dict, List, Tuple, Optional
-from czoi.daemons.base import Daemon, DaemonAction
-from czoi.zones.base import Zone
-from czoi.core.types import Operation
+from concurrent.futures import ThreadPoolExecutor
+from typing import Iterable, Optional
+
+from .base import Daemon
+
 
 class DaemonManager:
-    """Manages all daemons, handles conflict resolution."""
-    def __init__(self):
-        self.daemons: List[Daemon] = []
-        self._lock = asyncio.Lock()
+    """Schedules daemons asynchronously with per-daemon intervals."""
 
-    def register(self, daemon: Daemon) -> None:
+    def __init__(
+        self,
+        default_interval: float = 1.0,
+        max_workers: int = 4,
+    ) -> None:
+        self.default_interval = default_interval
+        self.daemons: list[Daemon] = []
+        self._running = False
+        self._executor = ThreadPoolExecutor(max_workers=max_workers)
+        self._tasks: list[asyncio.Task] = []
+
+    # -----------------------------------------------------------------
+    def add(self, daemon: Daemon) -> None:
         self.daemons.append(daemon)
 
-    async def check(self, zone: 'Zone', operation: Optional['Operation'],
-                    props: Dict, context: Dict) -> bool:
-        """Check all daemons and resolve actions. Returns True if allowed."""
-        actions = []
-        for daemon in self.daemons:
-            action = await daemon.monitor(zone, operation, props, context)
-            actions.append((daemon, action))
-        return await self._resolve(actions, zone, props, context)
+    def extend(self, daemons: Iterable[Daemon]) -> None:
+        self.daemons.extend(daemons)
 
-    async def _resolve(self, actions: List[Tuple[Daemon, DaemonAction]],
-                       zone: 'Zone', props: Dict, context: Dict) -> bool:
-        # If any BLOCK, block immediately
-        for daemon, action in actions:
-            if action == DaemonAction.BLOCK:
-                await daemon.act(action, zone, props, context)
-                return False
+    # -----------------------------------------------------------------
+    async def _run_daemon(self, daemon: Daemon) -> None:
+        loop = asyncio.get_running_loop()
+        while self._running and daemon.enabled:
+            await loop.run_in_executor(self._executor, daemon.safe_monitor)
+            await asyncio.sleep(daemon.interval or self.default_interval)
 
-        # Find highest priority non-ALLOW action
-        best_daemon = None
-        best_action = DaemonAction.ALLOW
-        for daemon, action in actions:
-            if action != DaemonAction.ALLOW:
-                if best_daemon is None or daemon.priority > best_daemon.priority:
-                    best_daemon = daemon
-                    best_action = action
+    # -----------------------------------------------------------------
+    async def run(self, duration: Optional[float] = None) -> None:
+        self._running = True
+        self._tasks = [
+            asyncio.create_task(self._run_daemon(d))
+            for d in self.daemons
+        ]
+        try:
+            if duration is not None:
+                await asyncio.sleep(duration)
+            else:
+                await asyncio.gather(*self._tasks)
+        finally:
+            self._running = False
+            for t in self._tasks:
+                t.cancel()
+            for t in self._tasks:
+                try:
+                    await t
+                except (asyncio.CancelledError, Exception):
+                    pass
+            self._tasks = []
 
-        if best_daemon:
-            await best_daemon.act(best_action, zone, props, context)
-            if best_action == DaemonAction.CHALLENGE:
-                return False
-        return True
+    def stop(self) -> None:
+        self._running = False
+
+    # -----------------------------------------------------------------
+    def tick(self) -> None:
+        """Synchronous single-pass invocation (for tests)."""
+        for d in self.daemons:
+            d.safe_monitor()
+
+    def shutdown(self) -> None:
+        self.stop()
+        self._executor.shutdown(wait=False)

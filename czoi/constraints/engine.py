@@ -1,91 +1,295 @@
-# czoi/constraints/engine.py
-from abc import ABC, abstractmethod
-from typing import Dict, List, Callable, Any, Awaitable
-from uuid import uuid4
-from czoi.core.types import ConstraintType
-from czoi.roles.user import User
-from czoi.roles.role import Role
-from czoi.zones.base import Zone
-from czoi.core.types import Operation
+"""ConstraintManager (Γ): bridges CZOA to the UniLog toolkit.
 
-class Constraint(ABC):
-    """Base class for all constraints."""
-    def __init__(self, name: str, constraint_type: ConstraintType):
-        self.name = name
-        self.type = constraint_type
-        self.id = uuid4()
+The manager is attached to the ROOT of the zone tree and is shared by
+every child. Evaluation builds a CZOIModel on demand for the requested
+zone, so zone-specific constraints see the correct local state.
 
-class IdentityConstraint(Constraint):
-    """Invariant that must hold in all reachable states."""
-    def __init__(self, name: str, condition: Callable[[Dict], bool]):
-        super().__init__(name, ConstraintType.IDENTITY)
-        self.condition = condition
+Γ = (I, T, G, C) — identity, trigger, goal, access.
+"""
+from __future__ import annotations
 
-    def check(self, state: Dict) -> bool:
-        return self.condition(state)
+from typing import Any, Callable, Optional
 
-class TriggerConstraint(Constraint):
-    """Event-condition-action rule."""
-    def __init__(self, name: str, event: str,
-                 condition: Callable[[Dict], bool],
-                 action: Callable[[Dict], Awaitable[None]]):
-        super().__init__(name, ConstraintType.TRIGGER)
-        self.event = event
-        self.condition = condition
-        self.action = action
+from ..core.exceptions import ConstraintError, UniLogBridgeError
+from ..core.types import ConstraintKind
+from ..operations.operation import Operation
+from ..roles.role import Role
+from ..roles.user import User
+from ..zones.base import ZoneBase
 
-class GoalConstraint(Constraint):
-    """Optimization objective (maximization)."""
-    def __init__(self, name: str, utility: Callable[[Dict], float]):
-        super().__init__(name, ConstraintType.GOAL)
-        self.utility = utility
+try:
+    from unilog.parser import UniLangParser
+    from unilog.engine import InferenceEngine, Model, World
+    _UNILOG_AVAILABLE = True
+except ImportError:                                        # pragma: no cover
+    UniLangParser = None                                   # type: ignore
+    InferenceEngine = None                                 # type: ignore
+    Model = object                                         # type: ignore
+    World = object                                         # type: ignore
+    _UNILOG_AVAILABLE = False
 
-class AccessConstraint(Constraint):
-    """Access control rule (SoD, temporal, attribute, property-based)."""
-    def __init__(self, name: str,
-                 condition: Callable[['User', 'Role', 'Zone', 'Operation', Dict, Dict], bool]):
-        super().__init__(name, ConstraintType.ACCESS)
-        self.condition = condition
 
-class ConstraintEngine:
+# ---------------------------------------------------------------------
+# UniLog Model backed by a live CZOI zone
+# ---------------------------------------------------------------------
+class CZOIModel(Model if _UNILOG_AVAILABLE else object):
+    """A UniLog Model built from a snapshot of a CZOI zone.
+
+    The model exposes:
+      * domains: Zone, Role, User, Operation
+      * functions: parent(z)
+      * predicates: inZone, childOf, hasRole, canPerform, plus any
+        user-registered predicates.
     """
-    Centralized constraint evaluation and enforcement.
-    """
-    def __init__(self):
-        self.identity_constraints: List[IdentityConstraint] = []
-        self.trigger_constraints: List[TriggerConstraint] = []
-        self.goal_constraints: List[GoalConstraint] = []
-        self.access_constraints: List[AccessConstraint] = []
 
-    def add_identity(self, constraint: IdentityConstraint) -> None:
-        self.identity_constraints.append(constraint)
+    def __init__(
+        self,
+        zone: ZoneBase,
+        request: Optional[dict] = None,
+        extra_predicates: Optional[dict[str, Callable]] = None,
+    ) -> None:
+        self.zone = zone
+        self.request = request or {}
+        self._world = World(0)
+        self._zones = list(zone.walk())
+        self._roles: list[Role] = list(
+            {id(r): r for z in self._zones for r in z.roles.values()}.values()
+        )
+        self._users: list[User] = list(
+            {id(u): u for z in self._zones for u in z.users.values()}.values()
+        )
+        self._ops: list[Operation] = list(
+            {id(o): o for z in self._zones for o in z.operations.values()}.values()
+        )
+        self._extra_predicates = extra_predicates or {}
 
-    def add_trigger(self, constraint: TriggerConstraint) -> None:
-        self.trigger_constraints.append(constraint)
+        # Build a lookup from qualified name -> entity (for term eval).
+        self._constants: dict[str, Any] = {}
+        for z in self._zones:
+            self._constants[z.name] = z
+        for r in self._roles:
+            self._constants[r.qualified_name] = r
+            self._constants[r.name] = r
+        for u in self._users:
+            self._constants[u.name] = u
+        for o in self._ops:
+            self._constants[o.qualified_name] = o
+            self._constants[o.name] = o
 
-    def add_goal(self, constraint: GoalConstraint) -> None:
-        self.goal_constraints.append(constraint)
+    # -----------------------------------------------------------------
+    # UniLog Model interface
+    # -----------------------------------------------------------------
+    def worlds(self):
+        return {self._world}
 
-    def add_access(self, constraint: AccessConstraint) -> None:
-        self.access_constraints.append(constraint)
+    def valuation(self, w, atom: str, args: tuple) -> bool:
+        return bool(self._dispatch(atom, args))
 
-    async def check_identity(self, state: Dict) -> bool:
-        for c in self.identity_constraints:
-            if not c.check(state):
+    def accessibility(self, w, modality, agent=None):
+        return {self._world}
+
+    def domain(self):
+        return set(self._zones + self._roles + self._users + self._ops)
+
+    def interpret(self, term, assignment):
+        """Resolve a term (string, AST constant, or AST variable)."""
+        # Bound variable?
+        if assignment and term in assignment:
+            return assignment[term]
+        # Named entity (constant)?
+        if isinstance(term, str):
+            if term in self._constants:
+                return self._constants[term]
+            # Fall through: literal
+            return term
+        # UniLog AST constant node → look up its name
+        name = getattr(term, "name", None)
+        if name is not None:
+            if assignment and name in assignment:
+                return assignment[name]
+            if name in self._constants:
+                return self._constants[name]
+            return name
+        return term
+
+    def probability(self, world, event):
+        return 0.0
+
+    def preference(self, world, w1, w2):
+        return False
+
+    # -----------------------------------------------------------------
+    # Predicate dispatch
+    # -----------------------------------------------------------------
+    def _dispatch(self, atom: str, args: tuple) -> bool:
+        if atom == "__true__":
+            return True
+
+        # User-registered predicates take precedence.
+        fn = self._extra_predicates.get(atom)
+        if fn is not None:
+            try:
+                return bool(fn(*args))
+            except Exception:
+                return False
+
+        if atom == "inZone" and len(args) == 2:
+            u, z = args
+            return hasattr(z, "users") and getattr(u, "name", None) in z.users
+        if atom == "childOf" and len(args) == 2:
+            c, p = args
+            return getattr(c, "parent", None) is p
+        if atom == "hasRole" and len(args) == 2:
+            u, r = args
+            return getattr(r, "name", None) in getattr(u, "roles", ())
+        if atom == "canPerform" and len(args) == 2:
+            u, o = args
+            engine = self.zone.permission_engine
+            if engine is None:
+                return False
+            return (
+                engine.evaluate_local(u, o, self.zone).name == "ALLOW"
+            )
+        # Closed-world assumption for unknown predicates.
+        return False
+
+
+# ---------------------------------------------------------------------
+# ConstraintManager
+# ---------------------------------------------------------------------
+class ConstraintManager:
+    """Γ = (I, T, G, C) — UniLog-backed constraint store."""
+
+    def __init__(self) -> None:
+        if not _UNILOG_AVAILABLE:
+            raise UniLogBridgeError(
+                "The unilog-toolkit is required. "
+                "Install with: pip install unilog-toolkit"
+            )
+        self.root: Optional[ZoneBase] = None
+        self.parser = UniLangParser()
+        self.engine = InferenceEngine.get_instance()
+        self._formulas: dict[ConstraintKind, list[Any]] = {
+            k: [] for k in ConstraintKind
+        }
+        self._extra_predicates: dict[str, Callable] = {}
+
+    # -----------------------------------------------------------------
+    def attach(self, zone: ZoneBase) -> None:
+        """Attach once at the root. Subsequent attaches are ignored."""
+        if self.root is None:
+            self.root = zone
+        elif self.root is not zone and not self.root.is_ancestor_of(zone):
+            raise ConstraintError(
+                f"ConstraintManager already bound to {self.root.name!r}; "
+                f"cannot attach to unrelated zone {zone.name!r}"
+            )
+
+    # -----------------------------------------------------------------
+    # User predicates
+    # -----------------------------------------------------------------
+    def register_predicate(self, name: str, fn: Callable) -> None:
+        self._extra_predicates[name] = fn
+
+    # -----------------------------------------------------------------
+    # Loading
+    # -----------------------------------------------------------------
+    def add(
+        self,
+        kind: ConstraintKind,
+        source: str,
+        name: Optional[str] = None,
+    ) -> Any:
+        try:
+            formula = self.parser.parse_string(source)
+        except Exception as exc:
+            raise ConstraintError(
+                f"Failed to parse {kind.value} constraint: {exc}"
+            ) from exc
+        self._formulas[kind].append(formula)
+        return formula
+
+    def add_identity(self, source: str) -> Any:
+        return self.add(ConstraintKind.IDENTITY, source)
+
+    def add_trigger(self, source: str) -> Any:
+        return self.add(ConstraintKind.TRIGGER, source)
+
+    def add_goal(self, source: str) -> Any:
+        return self.add(ConstraintKind.GOAL, source)
+
+    def add_access(self, source: str) -> Any:
+        return self.add(ConstraintKind.ACCESS, source)
+
+    def count(self, kind: Optional[ConstraintKind] = None) -> int:
+        if kind is None:
+            return sum(len(v) for v in self._formulas.values())
+        return len(self._formulas[kind])
+
+    def clear(self) -> None:
+        for v in self._formulas.values():
+            v.clear()
+
+    # -----------------------------------------------------------------
+    # Evaluation
+    # -----------------------------------------------------------------
+    def _model(
+        self,
+        zone: Optional[ZoneBase],
+        request: Optional[dict],
+    ) -> CZOIModel:
+        target = zone or self.root
+        if target is None:
+            raise ConstraintError("ConstraintManager is not attached")
+        return CZOIModel(
+            target,
+            request=request,
+            extra_predicates=self._extra_predicates,
+        )
+
+    def check_zone(
+        self,
+        zone: Optional[ZoneBase] = None,
+        request: Optional[dict] = None,
+    ) -> dict[str, bool]:
+        model = self._model(zone, request)
+        results: dict[str, bool] = {}
+        for kind, formulas in self._formulas.items():
+            ok = True
+            for f in formulas:
+                try:
+                    if not bool(self.engine.evaluate(f, model, model._world)):
+                        ok = False
+                        break
+                except Exception:
+                    ok = False
+                    break
+            results[kind.value] = ok
+        return results
+
+    def check_all(self, request: Optional[dict] = None) -> dict[str, bool]:
+        """Backward-compatible alias for `check_zone(root)`."""
+        return self.check_zone(self.root, request)
+
+    def is_satisfied(
+        self,
+        user: User,
+        operation: Operation,
+        zone: ZoneBase,
+    ) -> bool:
+        """Hook used by PermissionEngine for ACCESS constraints."""
+        if self.root is None:
+            return True
+        request = {"user": user, "op": operation, "zone": zone}
+        model = CZOIModel(
+            zone,
+            request=request,
+            extra_predicates=self._extra_predicates,
+        )
+        for f in self._formulas[ConstraintKind.ACCESS]:
+            try:
+                if not bool(self.engine.evaluate(f, model, model._world)):
+                    return False
+            except Exception:
                 return False
         return True
-
-    async def check_access(self, user: 'User', role: 'Role', zone: 'Zone',
-                           operation: 'Operation', props: Dict, context: Dict) -> bool:
-        for c in self.access_constraints:
-            if not c.condition(user, role, zone, operation, props, context):
-                return False
-        return True
-
-    async def evaluate_triggers(self, event: str, state: Dict) -> None:
-        for c in self.trigger_constraints:
-            if c.event == event and c.condition(state):
-                await c.action(state)
-
-    async def evaluate_goals(self, state: Dict) -> float:
-        return sum(c.utility(state) for c in self.goal_constraints)

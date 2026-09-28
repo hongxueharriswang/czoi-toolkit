@@ -1,94 +1,84 @@
-# top-level
-# czoa/__init__.py
+"""CZOI — Constrained Zoned-Object Implementation toolkit.
+
+Reference implementation of the Constrained Zoned-Object Architecture
+(CZOA) integrating the UniLog toolkit for formal constraint
+specification and evaluation.
+
+Paper: H. Wang, "Constrained Zoned-Object Architecture (CZOA):
+A Unified Framework for Building Secure and Intelligent Integrated
+Organizational Systems", 2026.
 """
-CZOA Toolkit - Constrained Zoned-Object Architecture
-
-A Python implementation of the CZOA 11-tuple formalism for building
-secure, adaptive, intelligent systems with recursive zones, first-class
-properties, and neural components.
-
-Author: Harris Wang
-Version: 1.0.0
-"""
-
-from czoi.core.types import PropertyType, PropagationPolicy, DaemonAction, ConstraintType
-from czoi.core.exceptions import (
+from .constraints.engine import ConstraintManager, CZOIModel
+from .core.exceptions import (
+    ApplicationError,
+    ConstraintError,
     CZOIError,
-    ZoneNotFoundError,
-    PropertyNotFoundError,
-    PermissionDeniedError,
-    ConstraintViolationError,
-    DaemonBlockError,
+    PermissionError,
+    RoleError,
+    SafetyViolation,
+    UniLogBridgeError,
+    UserError,
+    ZoneContainmentError,
+    ZoneError,
+    ZoneRecursionError,
 )
-from czoi.operations import Operation
-from czoi.zones import Zone, AtomicZone, CompositeZone
-from czoi.properties import Property, PropertyStore
-from czoi.roles import Role, User
-from czoi.constraints.engine import (
-    Constraint,
-    IdentityConstraint,
-    TriggerConstraint,
-    GoalConstraint,
-    AccessConstraint,
-    ConstraintEngine,
-)
-from czoi.neural import NeuralComponent, PropertyPredictor, AnomalyDetector
-from czoi.embedding.service import EmbeddingService
-from czoi.daemons.base import Daemon, SecurityDaemon, PropertyDaemon
-from czoi.daemons.manager import DaemonManager
-from czoi.permissions import PermissionEngine
-from czoi.toolkit import CZOASystem, CZOIToolkit
-from czoi.roles.application import Application   # add this line
-
-__all__ = [
-    # Types
-    "PropertyType",
-    "PropagationPolicy",
-    "DaemonAction",
-    "ConstraintType",
-    # Exceptions
-    "CZOAError",
-    "ZoneNotFoundError",
-    "PropertyNotFoundError",
-    "PermissionDeniedError",
-    "ConstraintViolationError",
-    "DaemonBlockError",
-    # Zones
-    "Zone",
-    "AtomicZone",
-    "CompositeZone",
-    # Properties
-    "Property",
-    "PropertyStore",
-    # Roles & Users
-    "Role",
-    "User",
-    # Constraints
-    "Constraint",
-    "IdentityConstraint",
-    "TriggerConstraint",
-    "GoalConstraint",
-    "AccessConstraint",
-    "ConstraintEngine",
-    # Neural
-    "NeuralComponent",
-    "PropertyPredictor",
-    "AnomalyDetector",
-    # Embedding
-    "EmbeddingService",
-    # Daemons
-    "Daemon",
-    "SecurityDaemon",
-    "PropertyDaemon",
-    "DaemonManager",
-    # Permissions
-    "PermissionEngine",
-    # System
-    "CZOASystem",
-    "CZOAToolkit",
-    "Application",
-    "Operation",
-    "CZOIError",
-]
+from .core.types import ConstraintKind, DaemonSignal, Decision
+from .daemons.base import Daemon
+from .daemons.manager import DaemonManager
+from .embedding.service import EmbeddingService
+from .neural.components import AnomalyDetector, MiningResult, Predictor, RoleMiner
+from .operations.operation import Operation
+from .permissions.engine import PermissionEngine
+from .properties.property import Property
+from .properties.store import PropertyStore
+from .roles.application import Application
+from .roles.role import Role
+from .roles.user import User
+from .toolkit.factory import CZOABuilder
+from .zones.atomic import AtomicZone
+from .zones.base import ZoneBase
+from .zones.composite import CompositeZone
 
 __version__ = "1.0.0"
+
+__all__ = [
+    "AnomalyDetector",
+    "Application",
+    "ApplicationError",
+    "AtomicZone",
+    "CZOABuilder",
+    # Exceptions
+    "CZOIError",
+    "CZOIModel",
+    "CompositeZone",
+    "ConstraintError",
+    "ConstraintKind",
+    "ConstraintManager",
+    "Daemon",
+    "DaemonManager",
+    "DaemonSignal",
+    # Types
+    "Decision",
+    "EmbeddingService",
+    "MiningResult",
+    "Operation",
+    # Runtime
+    "PermissionEngine",
+    "PermissionError",
+    "Predictor",
+    # Entities
+    "Property",
+    "PropertyStore",
+    "Role",
+    "RoleError",
+    "RoleMiner",
+    "SafetyViolation",
+    "UniLogBridgeError",
+    "User",
+    "UserError",
+    # Zones
+    "ZoneBase",
+    "ZoneContainmentError",
+    "ZoneError",
+    "ZoneRecursionError",
+]

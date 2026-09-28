@@ -1,8 +1,4 @@
 # czoi/neural/__init__.py
-"""
-Neural components for learning and adaptation.
-"""
+from .components import AnomalyDetector, MiningResult, Predictor, RoleMiner
 
-from czoi.neural.components import NeuralComponent, PropertyPredictor, AnomalyDetector
-
-__all__ = ["NeuralComponent", "PropertyPredictor", "AnomalyDetector"]
+__all__ = ["AnomalyDetector", "MiningResult", "Predictor", "RoleMiner"]

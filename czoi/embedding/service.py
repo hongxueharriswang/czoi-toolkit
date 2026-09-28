@@ -1,63 +1,126 @@
-# czoi/embedding/service.py
-import weakref
-from typing import Dict, Tuple, Optional
-from uuid import UUID
+"""Embedding service (E): local embeddings + global alignment functor."""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+from typing import Any, Optional
+
 import numpy as np
-from czoi.zones.base import Zone
+
 
 class EmbeddingService:
+    """Local embeddings + trained global alignment functor E_align.
+
+    If `sentence-transformers` is available and `use_transformer=True`,
+    embeddings are semantic. Otherwise a deterministic hash embedding is
+    used — reproducible and dependency-free.
     """
-    Semantic embedding service for all CZOA entities.
-    """
-    def __init__(self, dimension: int = 128):
+
+    def __init__(
+        self,
+        dimension: int = 64,
+        model_name: str = "all-MiniLM-L6-v2",
+        use_transformer: bool = False,
+    ) -> None:
         self.dimension = dimension
-        self._embeddings: Dict[Tuple[str, UUID], np.ndarray] = {}
-        self._zone_cache = weakref.WeakKeyDictionary()
+        self.model = None
+        if use_transformer:
+            try:
+                from sentence_transformers import SentenceTransformer
+                self.model = SentenceTransformer(model_name)
+                self.dimension = self.model.get_sentence_embedding_dimension()
+            except ImportError:
+                self.model = None
+        # Global alignment: a linear map from local to shared space.
+        self.alignment_matrix: Optional[np.ndarray] = None
 
-    def set_embedding(self, entity_type: str, entity_id: UUID, vector: np.ndarray) -> None:
-        if len(vector) != self.dimension:
-            raise ValueError(f"Vector dimension must be {self.dimension}")
-        self._embeddings[(entity_type, entity_id)] = vector.copy()
+    # -----------------------------------------------------------------
+    # Local embeddings
+    # -----------------------------------------------------------------
+    def embed(self, text: str) -> np.ndarray:
+        if self.model is not None:
+            return np.asarray(self.model.encode(text, convert_to_numpy=True))
+        return self._hash_embed(text)
 
-    def get_embedding(self, entity_type: str, entity_id: UUID) -> Optional[np.ndarray]:
-        key = (entity_type, entity_id)
-        if key in self._embeddings:
-            return self._embeddings[key]
-        # Generate random default embedding
-        vec = np.random.randn(self.dimension) * 0.1
-        self._embeddings[key] = vec
-        return vec
+    def embed_operation(self, operation: Any) -> np.ndarray:
+        app = getattr(operation, "application", None)
+        app_name = getattr(app, "name", "") if app else ""
+        return self.embed(f"{app_name}.{operation.name}")
 
-    def compute_zone_embedding(self, zone: 'Zone') -> np.ndarray:
-        if zone in self._zone_cache:
-            return self._zone_cache[zone]
+    def embed_role(self, role: Any) -> np.ndarray:
+        if not role.base_permissions:
+            return np.zeros(self.dimension)
+        vectors = [self.embed_operation(op) for op in role.base_permissions]
+        return np.mean(vectors, axis=0)
 
-        if not zone.is_composite:
-            vec = self.get_embedding('zone', zone.id)
-        else:
-            child_embeddings = [self.compute_zone_embedding(child) for child in zone.children]
-            if child_embeddings:
-                combined = np.mean(child_embeddings, axis=0)
-            else:
-                combined = np.zeros(self.dimension)
-            # Include property embeddings
-            prop_vecs = []
-            for prop in zone.properties.values():
-                pv = self.get_embedding('property', prop.id)
-                prop_vecs.append(pv)
-            if prop_vecs:
-                prop_combined = np.mean(prop_vecs, axis=0)
-                combined = 0.7 * combined + 0.3 * prop_combined
-            vec = combined
+    # -----------------------------------------------------------------
+    # Global alignment functor E_align
+    # -----------------------------------------------------------------
+    def align_to_global(self, v: np.ndarray) -> np.ndarray:
+        v = np.asarray(v, dtype=float)
+        if self.alignment_matrix is not None:
+            v = v @ self.alignment_matrix
+        n = np.linalg.norm(v)
+        return v / n if n > 1e-8 else v
 
-        self._zone_cache[zone] = vec
-        return vec
+    def train_alignment(
+        self,
+        positives: list[tuple[np.ndarray, np.ndarray]],
+        negatives: list[tuple[np.ndarray, np.ndarray]],
+        epochs: int = 200,
+        lr: float = 0.01,
+        margin: float = 0.5,
+    ) -> None:
+        """Contrastive training of the alignment matrix.
 
-    def similarity(self, entity1: Tuple[str, UUID], entity2: Tuple[str, UUID]) -> float:
-        v1 = self.get_embedding(entity1[0], entity1[1])
-        v2 = self.get_embedding(entity2[0], entity2[1])
-        norm1 = np.linalg.norm(v1)
-        norm2 = np.linalg.norm(v2)
-        if norm1 == 0 or norm2 == 0:
-            return 0.0
-        return float(np.dot(v1, v2) / (norm1 * norm2))
+        Objective (paper §5.2):
+            sum_positives ||a - b||^2
+          - sum_negatives max(0, margin - ||a - b||)^2
+        """
+        d = self.dimension
+        W = np.eye(d)
+        for _ in range(epochs):
+            grad = np.zeros_like(W)
+            for a, b in positives:
+                diff = a @ W - b @ W
+                grad += 2 * np.outer(a, diff) - 2 * np.outer(b, diff)
+            for a, b in negatives:
+                diff = a @ W - b @ W
+                dist = np.linalg.norm(diff)
+                if dist < margin:
+                    grad -= 2 * (margin - dist) * (
+                        np.outer(a, diff) - np.outer(b, diff)
+                    ) / (dist + 1e-8)
+            W -= lr * grad / max(len(positives) + len(negatives), 1)
+        self.alignment_matrix = W
+
+    # -----------------------------------------------------------------
+    # Similarity
+    # -----------------------------------------------------------------
+    def similarity(self, a: np.ndarray, b: np.ndarray) -> float:
+        a = self.align_to_global(a)
+        b = self.align_to_global(b)
+        return float(np.dot(a, b))
+
+    # -----------------------------------------------------------------
+    # Persistence
+    # -----------------------------------------------------------------
+    def save_alignment(self, path: str) -> None:
+        if self.alignment_matrix is None:
+            return
+        np.save(path, self.alignment_matrix)
+
+    def load_alignment(self, path: str) -> None:
+        if not os.path.exists(path):
+            return
+        self.alignment_matrix = np.load(path)
+
+    # -----------------------------------------------------------------
+    def _hash_embed(self, text: str) -> np.ndarray:
+        h = hashlib.sha256(text.encode()).digest()
+        raw = np.frombuffer(
+            h * ((self.dimension // 32) + 1), dtype=np.uint8
+        )[: self.dimension]
+        v = (raw.astype(float) - 128.0) / 128.0
+        return v

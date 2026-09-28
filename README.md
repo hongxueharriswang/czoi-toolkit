@@ -1,385 +1,481 @@
+# CZOI Toolkit
 
-# CZOI — Constrained Zoned‑Object Implementation Toolkit
+**A Python implementation of the Constrained Zoned-Object Architecture (CZOA) for building secure and intelligent integrated organizational systems.**
 
-**CZOI** is a Python toolkit for analysis, design, modeling, implementation, simulation, maintenance, and **access control** of **organizational intelligent information systems** at any scale—grounded in the **Constrained Zoned‑Object Architecture (CZOA)**. It unifies hierarchical zoning, role/permission control, constraints, embeddings, neural components, continuous monitoring daemons, and simulation—so you can move from theory to robust implementations quickly.
+[![Python](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![UniLog](https://img.shields.io/badge/unilog--toolkit-%E2%89%A52.0-orange)](https://github.com/hongxueharriswang/unilog-toolkit)
 
-![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg) ![License MIT](https://img.shields.io/badge/license-MIT-green.svg) ![Build passing](https://img.shields.io/badge/build-passing-brightgreen.svg) ![Status alpha](https://img.shields.io/badge/status-alpha-orange.svg)
+---
 
-***
+## What is CZOA?
 
-## Contents
+The **Constrained Zoned-Object Architecture (CZOA)** is a unified formalism that bridges two previously disconnected fields:
 
-*   key-capabilities
-*   when-to-use-czoi
-*   installation
-*   quick-start
-*   architecture-at-a-glance
-*   core-concepts
-    *   zones
-    *   roles--inheritance
-    *   operations--applications
-    *   gamma-mappings-interzone-role-projection
-    *   constraints
-    *   permission-engine
-    *   neural-components
-    *   embedding-service--vector-store
-    *   daemons-security--compliance
-    *   simulation-engine
-    *   storage
-*   cli
-*   examples
-*   testing
-*   project-layout
-*   roadmap
-*   contributing
-*   security-notes
-*   license
-*   citation
-*   faq
-*   troubleshooting
+- **Theories of intelligence** — how adaptive behaviour emerges from hierarchical composition, constraint satisfaction, and learning.
+- **Enterprise system engineering** — how to build secure, maintainable systems aligned with organisational structure.
 
-***
+CZOA shows that enterprise systems are a natural species of intelligent systems. Every organizational unit (a hospital, a department, a factory cell, a drone sector) is modelled as a **zone** — a fully autonomous subsystem with its own roles, operations, neural components, constraints, and daemons — that is recursively composed into a system-of-systems.
 
-## Key Capabilities
+The CZOI toolkit is the reference implementation. It provides:
 
-*   **CZOA core modeling**: Zones, roles, users, applications, and operations with hierarchical semantics.
-*   **Policy computation**: Intra‑zone role inheritance + inter‑zone γ‑mappings for cross‑zone privilege projection.
-*   **Constraint system**: Identity / Trigger / Goal / Access constraints with a **safe evaluator**.
-*   **Neural components**: Role mining (cluster patterns) and anomaly detection for adaptive governance.
-*   **Embeddings & similarity**: Deterministic hash fallback + pluggable vector stores for entity similarity.
-*   **Daemons**: Security & compliance monitors for continuous enforcement and alerting.
-*   **Simulation**: Generate synthetic access logs; analyze allow/deny rates under policy & constraints.
-*   **CLI**: Bootstrap systems from YAML, run checks, launch simulations.
-*   **Framework integration**: Stubs for Django, Flask, FastAPI middleware/decorators.
+- A recursive zone tree where every zone is itself a full CZOA system.
+- A two-stage permission calculus (Φ) with parent override and caching.
+- Integration with the [UniLog toolkit](https://github.com/hongxueharriswang/unilog-toolkit) for formal constraint specification across eleven logic families.
+- Hierarchical constraint daemons (Δ) with signal propagation.
+- Neural components (N) for role mining, anomaly detection, and domain-specific prediction.
+- Semantic embeddings (E) with a global alignment functor for cross-zone reasoning.
 
-***
+**Paper**: H. Wang, *"Constrained Zoned-Object Architecture (CZOA): A Unified Framework for Building Secure and Intelligent Integrated Organizational Systems"*, 2026.
 
-## When to Use CZOI
+**Related work**:
+- COH: [Constrained Object Hierarchies](https://doi.org/10.3390/computers14110478) (Wang 2025)
+- ZRB: A Formalized Zoned Role-Based Framework (Wang 2026)
+- UniLog: [unilog-toolkit](https://github.com/hongxueharriswang/unilog-toolkit)
 
-Use CZOI when you need:
-
-*   **Multi‑zone**, multi‑tenant, or federated systems with **hierarchical** governance.
-*   **Fine‑grained access control** with **computable constraints** and explainable decisions.
-*   **Adaptive** policy evolution informed by usage **signals** (anomalies, clusters).
-*   **Repeatable simulation and analysis** to validate policy designs before production.
-
-***
+---
 
 ## Installation
 
-> Python **3.9+** is recommended.
-
-**Development install (editable):**
-
 ```bash
-git clone https://github.com/<YOUR_ORG>/czoi.git
-cd czoi
-python -m venv .venv
-# macOS/Linux
-source .venv/bin/activate
-# Windows (PowerShell)
-.venv\Scripts\Activate.ps1
+# Core toolkit
+pip install czoi-toolkit
 
-pip install -r requirements.txt
-pip install -e .
+# With optional features
+pip install czoi-toolkit[neural]     # scikit-learn for role mining
+pip install czoi-toolkit[embedding]  # sentence-transformers for semantic embeddings
+pip install czoi-toolkit[dev]        # pytest and dev tools
 ```
 
-**Optional extras** (APIs, deep learning, etc.):
+The toolkit depends on `unilog-toolkit>=2.0` and `numpy>=1.19`.
+
+### From source
 
 ```bash
-# If you’ll build APIs or use transformers later:
-pip install "fastapi uvicorn torch transformers"
+git clone https://github.com/hongxueharriswang/czoi-toolkit.git
+cd czoi-toolkit
+pip install -e ".[dev]"
 ```
 
-> Note: The sample tests do not require a database; the SQLAlchemy storage layer is present but not mandatory for the quick start.
+---
 
-***
-
-## Quick Start
-
-A minimal end‑to‑end example using in‑memory objects and a fake storage (no DB required):
+## Quickstart
 
 ```python
-from czoi.core.models import Zone, Role, User, Application
-from czoi.permission.engine import PermissionEngine
+from czoi import CZOABuilder, Application, Operation, Role, User, Decision
 
-# Minimal storage stub for examples & tests
-class FakeStorage:
-    def get_gamma_mappings(self, **kwargs): return []
-    def get_role(self, role_id): return None
-    def get_constraints(self, **kwargs): return []
+# ---- 1. Build the recursive zone tree -------------------------------
+builder = CZOABuilder("RegionalHealthAuthority")
 
-# Build a small hierarchy
-root = Zone("Root")
-hr = Zone("HR", parent=root)
+hospital = builder.add_zone("CityHospitalA")
+emergency = builder.add_zone("Emergency", parent=hospital, atomic=True)
 
-manager = Role("Manager", hr)
-assistant = Role("Assistant", hr)
-assistant.add_senior(manager)  # Assistant inherits from Manager downward in the hierarchy
+# ---- 2. Define operations and roles ---------------------------------
+app = Application("EMR", zone=hospital)
+prescribe = app.add_operation(Operation("prescribe"))
+dispense  = app.add_operation(Operation("dispense"))
+hospital.add_application(app)
 
-app = Application("HR App")
-view_op = app.add_operation("view_employee")
-edit_op = app.add_operation("edit_employee")
+attending = Role("AttendingPhysician", zone=hospital,
+                 base_permissions=[prescribe])
+nurse     = Role("Nurse", zone=hospital,
+                 base_permissions=[dispense])
+hospital.add_role(attending)
+hospital.add_role(nurse)
+attending.add_junior(nurse)   # Attending is senior to Nurse
 
-assistant.grant_permission(view_op)
-manager.grant_permission(edit_op)
+# ---- 3. Create users (containment enforced automatically) -----------
+alice = User("alice", roles={"AttendingPhysician"})
+bob   = User("bob",   roles={"Nurse"})
+builder.root.add_user(alice); hospital.add_user(alice); emergency.add_user(alice)
+builder.root.add_user(bob);   hospital.add_user(bob);   emergency.add_user(bob)
 
-alice = User("alice")
-alice.assign_role(hr, assistant)
-
-engine = PermissionEngine(FakeStorage())
-print("View allowed:", engine.decide(alice, view_op, hr))  # True
-print("Edit allowed:", engine.decide(alice, edit_op, hr))  # False
+# ---- 4. Check permissions through the real engine -------------------
+engine = builder.permission_engine
+print(engine.decide(alice, prescribe, emergency).name)  # ALLOW
+print(engine.decide(bob,   prescribe, emergency).name)  # INCONCLUSIVE
+print(engine.decide(bob,   dispense,  emergency).name)  # ALLOW
 ```
 
-Run it:
-
-```bash
-python examples/quickstart.py
-```
-
-***
-
-## Architecture at a Glance
-
-    czoi/
-      core/         → Zones, Roles, Users, Applications, Operations, System
-      permission/   → PermissionEngine (intra-zone inheritance + γ-mappings + constraints)
-      constraint/   → Constraint model & manager; safe expression evaluation
-      neural/       → AnomalyDetector, RoleMiner (placeholders for adaptive governance)
-      embedding/    → Vector store abstraction + EmbeddingService
-      daemon/       → SecurityDaemon, ComplianceDaemon
-      simulation/   → SimulationEngine (traffic, logs, metrics)
-      storage/      → SQLAlchemy models & storage stub
-      integrations/ → Django / Flask / FastAPI stubs
-      cli/          → Console entrypoints
-      utils/        → Logging & safe_eval
-
-***
+---
 
 ## Core Concepts
 
-### Zones
+### Zones are recursive systems
 
-Zones define hierarchical, **composable contexts** (e.g., Root → Dept → Team). Child zones inherit lineage; policies can traverse up/down as needed.
+Every zone is itself a full CZOA 10-tuple:
 
-### Roles & Inheritance
-
-Roles live **within a zone**. A role can declare **senior/junior** relations (intra‑zone). CZOI computes effective permissions by **accumulating junior permissions** when evaluating a senior role—this is deliberate to enable bottom‑up accumulation of capabilities.
-
-### Operations & Applications
-
-Applications define named operations (e.g., `view_employee`, `edit_employee`, HTTP verbs, or custom actions). Roles grant permissions to operations.
-
-### Gamma Mappings (Inter‑Zone Role Projection)
-
-**Γ‑mappings** project a role in a child zone to a role in a **parent** zone (or across zones via ancestry). This lets organizations centralize some privileges while empowering local autonomy.
-
-### Constraints
-
-Four types are supported out‑of‑the‑box:
-
-*   **Identity**: who/what is acting
-*   **Trigger**: event‑driven activation
-*   **Goal**: target states to achieve
-*   **Access**: guard conditions for authorization checks
-
-CZOI includes a **safe expression evaluator** to execute boolean conditions with a **restricted AST** and disabled builtins.
-
-### Permission Engine
-
-`PermissionEngine.decide(user, operation, zone, context)` evaluates:
-
-1.  User’s **assigned roles** in the current zone (with weights),
-2.  **Intra‑zone** inheritance (accumulate junior role permissions),
-3.  **Inter‑zone γ‑mappings** up the ancestry to add parent‑role permissions, and
-4.  **Access constraints** for final admission control.
-
-### Neural Components
-
-*   **AnomalyDetector**: Isolation Forest for unusual usage patterns.
-*   **RoleMiner**: clustering‑based role discovery (placeholder to help suggest refinements).
-
-> You can wire real telemetry and retrain periodically to evolve policies.
-
-### Embedding Service & Vector Store
-
-A pluggable abstraction for vector similarity (e.g., nearest neighbor of entities: users, resources, operations). The default is an **in‑memory store** with a **deterministic hash fallback embedding** (no external models required).
-
-### Daemons (Security & Compliance)
-
-*   **SecurityDaemon**: receives signals (e.g., alerts, high risk scores) and can trigger protective actions (e.g., temporary constraints).
-*   **ComplianceDaemon**: scans recent events/violations and raises alerts.
-
-### Simulation Engine
-
-Generates randomized traffic over a configured duration to **exercise policy**, then produces allow/deny metrics and optional JSON logs. Use it before deploying a new policy.
-
-### Storage
-
-SQLAlchemy ORM models are provided. The example `Storage.save_system` is a stub—extend it to persist your in‑memory graph to your database of choice.
-
-***
-
-## CLI
-
-The package provides a `czoi` command with subcommands:
-
-```bash
-czoi --help
+```
+S = (Z, R, U, A, O, N, E, Γ, Φ, Δ)
 ```
 
-*   **Initialize from YAML**
-    ```bash
-    czoi init -c path/to/system.yaml
-    ```
-    Parses zones/roles/apps/users from a config and prepares persistence hooks.
+| Component | Meaning |
+|---|---|
+| **Z** | Child zones (recursive subsystems) |
+| **R** | Roles with base permissions and intra-zone seniority |
+| **U** | Users (containment: `U_child ⊆ U_parent`) |
+| **A** | Applications — structural modules |
+| **O** | Operations — atomic permission targets |
+| **N** | Neural components (learnable functions) |
+| **E** | Embeddings + global alignment functor |
+| **Γ** | Constraint system (I, T, G, C) |
+| **Φ** | Permission calculus (two-stage recursive) |
+| **Δ** | Constraint daemons (continuous monitoring) |
 
-*   **Check a permission**
-    ```bash
-    czoi check --user alice --operation edit_employee --zone HR --db sqlite:///czoa.db
-    ```
+Zones come in two concrete types:
 
-*   **Run a simulation**
-    ```bash
-    czoi simulate --db sqlite:///czoa.db --duration 120 --output simulation_logs.json
-    ```
+- **`CompositeZone`** — has children.
+- **`AtomicZone`** — a leaf; calling `add_zone` raises `TypeError`, matching `Z_z = ∅`.
 
-> The CLI commands include placeholders where you can connect to real storage and lookup logic.
+### Operations are the permission target — not applications
 
-***
+Permissions are granted on **operations**, never on applications. An operation is uniquely identified by `application.operation` (e.g. `EMR.prescribe`). This preserves the orthogonality of the ten components: applications provide deployability and grouping; operations provide the granular units for fine-grained security and auditing.
 
-## Examples
+```python
+# Correct
+role.grant(operation)
 
-*   `examples/quickstart.py`: Minimal in‑memory scenario (no DB).
-*   Add your own scenario files under `examples/` to test organizational topologies, workflows, or migration plans.
-
-***
-
-## Testing
-
-This repository includes **pytest** tests:
-
-```bash
-pytest -q
+# Incorrect (applications are not permission targets)
+# role.grant(application)
 ```
 
-The sample test (`tests/test_basic.py`) verifies that:
+### Two-stage permission calculus
 
-*   a junior role with `view` is **allowed** to view; and
-*   the same user is **denied** `edit` unless that permission is present via inheritance/γ‑mapping/constraints.
+```
+P_effective(r, z) =
+    P_base^z(r)
+    ∪ ⋃_{r' ∈ seniority_z(r)} P_base^z(r')
+    ∪ ⋃_{z_child ∈ Z_z} γ(z_child, r)
+    ∪ Φ_parent^{-1}(r, z)
+```
 
-***
+When a user requests an operation:
+
+1. **Local check** — evaluates the user's roles in the current zone and its access constraints.
+2. **Parent override** — if the local decision is `INCONCLUSIVE` or the operation touches cross-subsystem resources, the engine recurses to the parent zone.
+
+```python
+engine.decide(user, operation, zone)  # returns Decision.ALLOW / DENY / INCONCLUSIVE
+```
+
+### Constraints via UniLog
+
+The CZOI toolkit delegates constraint specification to the [UniLog toolkit](https://github.com/hongxueharriswang/unilog-toolkit), a fibred logic framework with eleven solvers (classical, modal, epistemic, deontic, temporal, dynamic, description, probabilistic, non-monotonic, preference, fuzzy).
+
+```python
+builder.add_access_constraint("""
+    signature {
+        sort User, Role;
+        constant Doctor : Role;
+        constant Auditor : Role;
+        predicate hasRole(u: User, r: Role);
+    }
+    forall u: User .
+        not (hasRole(u, Doctor) and hasRole(u, Auditor))
+""")
+```
+
+The constraint is evaluated on every permission check through the `ConstraintManager.is_satisfied` hook.
+
+### Hierarchical daemons
+
+Daemons are continuous monitors that emit typed signals up a daemon tree.
+
+```python
+from czoi import Daemon, DaemonSignal
+
+class BatteryDaemon(Daemon):
+    def __init__(self, robots, threshold=0.2, parent=None):
+        super().__init__("BatteryDaemon", parent=parent, interval=1.0)
+        self.robots = robots
+        self.threshold = threshold
+
+    def monitor(self):
+        for r in self.robots:
+            if r.attributes.get("battery", 1.0) < self.threshold:
+                self.emit_signal(DaemonSignal.STATE_WARNING,
+                                 {"robot": r.name})
+
+class FleetDaemon(Daemon):
+    def on_signal(self, signal, payload, source=None):
+        # Handle child signals; propagate upward if there is a parent
+        ...
+```
+
+The `DaemonManager` runs daemons asynchronously via a thread pool so a slow monitor never blocks the event loop.
+
+```python
+builder.add_daemon(fleet)
+builder.add_daemon(battery)
+await builder.daemon_manager.run(duration=60.0)
+```
+
+### Neural components
+
+Three built-in neural components are provided:
+
+- **`Predictor`** — a trainable linear/logistic model with `fit`, `predict`, `fires`.
+- **`AnomalyDetector`** — an autoencoder with a calibrated threshold; `score` and `is_anomalous`.
+- **`RoleMiner`** — unsupervised permission mining via an autoencoder + clustering (paper §5.1).
+
+```python
+from czoi import Predictor, AnomalyDetector, RoleMiner
+import numpy as np
+
+model = Predictor("sepsis", threshold=0.85)
+model.fit(X_train, y_train, epochs=500)
+
+detector = AnomalyDetector("access", input_dim=5, latent_dim=3)
+detector.fit(X_normal, epochs=300)
+detector.is_anomalous(x)   # -> bool
+
+miner = RoleMiner(latent_dim=8, min_cluster_size=3)
+result = miner.mine(X_binary, operation_names)
+result.suggested_roles      # {"MinedRole_0": ["read_doc", ...], ...}
+```
+
+### Semantic embeddings
+
+```python
+from czoi import EmbeddingService
+
+emb = EmbeddingService(dimension=64)
+v1 = emb.embed_operation(operation)
+v2 = emb.embed_role(role)
+score = emb.similarity(v1, v2)
+
+# Contrastive training of the global alignment functor
+emb.train_alignment(positives=[(a, b)], negatives=[(a, c)])
+```
+
+### Adaptive access control
+
+The toolkit supports dynamic permission adjustment that preserves safety (paper Theorem 7):
+
+```python
+builder.root.grant(role, operation)   # invalidates the permission cache
+builder.root.revoke(role, operation)  # invalidates the permission cache
+```
+
+A `NeuralContribution` hook lets a neural component influence a decision:
+
+```python
+from czoi import NeuralContribution
+
+def surge_hook(user, operation, zone, base):
+    if (operation.name == "prescribe"
+            and zone.properties.get("surge_active", False)):
+        return Decision.ALLOW
+    return base
+
+builder.permission_engine.set_neural_contribution(
+    NeuralContribution(surge_hook)
+)
+```
+
+---
 
 ## Project Layout
 
-    czoi/
-    ├── czoi/
-    │   ├── core/           # models.py, system.py
-    │   ├── permission/     # engine.py
-    │   ├── constraint/     # models.py, manager.py
-    │   ├── neural/         # base.py, components.py
-    │   ├── embedding/      # vector_store.py, service.py
-    │   ├── daemon/         # base.py, builtins.py
-    │   ├── simulation/     # engine.py
-    │   ├── integrations/   # django.py, flask.py, fastapi.py (placeholders)
-    │   ├── cli/            # main.py (console entrypoint)
-    │   ├── storage/        # sqlalchemy.py, vector.py
-    │   └── utils/          # logging.py, eval.py
-    ├── tests/
-    │   └── test_basic.py
-    ├── examples/
-    │   └── quickstart.py
-    ├── requirements.txt
-    ├── setup.py
-    ├── README.md
-    ├── LICENSE
-    └── .gitignore
+```
+czoi/
+├── core/               # exceptions, types
+├── properties/         # typed attribute store
+├── operations/         # Operation
+├── roles/              # Application, Role, User
+├── zones/              # ZoneBase, AtomicZone, CompositeZone (recursive)
+├── permissions/        # PermissionEngine (Φ)
+├── constraints/        # ConstraintManager (Γ) — bridges UniLog
+├── neural/             # Predictor, AnomalyDetector, RoleMiner
+├── embedding/          # EmbeddingService (E)
+├── daemons/            # Daemon base, DaemonManager (Δ)
+└── toolkit/            # CZOABuilder factory
 
-***
+examples/
+├── quickstart.py
+├── nhs_simulation.py
+├── unilog_constraints.py
+└── ...
+
+tests/
+└── test_basic.py
+```
+
+---
+
+## Examples
+
+The `examples/` directory contains runnable demonstrations:
+
+| Example | Demonstrates |
+|---|---|
+| `quickstart.py` | Recursive zones, roles, seniority, UniLog constraint |
+| `nhs_simulation.py` | Surge handling with daemons and adaptive permissions |
+| `unilog_constraints.py` | The four families of constraints (I, T, G, C) |
+
+Real-world domain simulations are provided in the top-level `automation-*.py` and `css-*.py` scripts:
+
+| Script | Domain |
+|---|---|
+| `automation-01.py` | Warehouse robot transport |
+| `automation-02.py` | Multi-AGV warehouse with zone capacity |
+| `automation-03.py` | Self-driving ride-hailing fleet |
+| `automation-04.py` | Manufacturing assembly line |
+| `automation-05.py` | Drone swarm coverage |
+| `css-01.py` | Opinion dynamics on social networks |
+| `css-02.py` | Building evacuation |
+| `css-03.py` | Market microstructure |
+| `css-04.py` | Multi-city SIR epidemic |
+| `css-05.py` | Urban traffic flow |
+| `czoa-nhs-simulation-1-08.py` | Hospital surge (paired A/B) |
+| `czoa-gfts-simulation-2-08.py` | Trading desk with circuit breaker |
+| `czoa-sci-simulation-3-08.py` | Smart-city incident response |
+| `czoa-uams-simulation-4-08.py` | University registration + FERPA |
+| `czoa-scms-simulation-5-08.py` | Supply chain distribution center |
+
+Each simulation compares baseline RBAC against CZOA and reports genuine measured improvements (mean, 95 % CI) rather than hard-coded constants.
+
+---
+
+## Testing
+
+```bash
+pytest -q                          # all tests
+pytest -q tests/test_basic.py      # focused on core behaviour
+```
+
+The test suite covers:
+
+- Recursive zone construction and containment.
+- Role inheritance and seniority.
+- Permission calculus (local, parent override, denial).
+- UniLog constraint parsing and evaluation.
+- Neural components (fit, predict, anomaly detection).
+- Daemon hierarchy and signal propagation.
+- Embedding similarity and alignment.
+
+---
+
+## Design Principles
+
+1. **Minimality** — the ten components of the CZOI tuple are mutually orthogonal. No redundancy, no hidden state.
+2. **Recursion** — every zone is a full system. Any subsystem can be developed, tested, and deployed independently while remaining governed by parent constraints.
+3. **Containment** — `U_child ⊆ U_parent` is enforced at user-registration time.
+4. **Operation-level permissions** — access control is maximally granular; the audit trail is precise.
+5. **Formal constraints** — all organisational policy is expressible in UniLog and evaluated against live system state.
+6. **Defensive monitoring** — daemons provide continuous compliance verification, independent of the permission engine.
+7. **Safety-preserving adaptation** — every adaptive update preserves monotonicity, identity constraints, and audit completeness (paper Theorem 7).
+
+---
+
+## UniLog Integration
+
+The toolkit depends on [unilog-toolkit](https://github.com/hongxueharriswang/unilog-toolkit) for constraint specification. UniLog provides:
+
+- **Eleven solvers**: classical, modal, epistemic, deontic, temporal, dynamic, description, probabilistic, non-monotonic, preference, fuzzy.
+- **A concrete syntax** (UniLang) accepting both ASCII and Unicode forms.
+- **SMT-based verification** for bounded state spaces.
+- **Formal soundness guarantees** witnessed by the toolkit's test suite.
+
+The `ConstraintManager` in CZOI builds a `CZOIModel` (implements the UniLog `Model` ABC) from a live zone and evaluates every loaded formula against it.
+
+---
 
 ## Roadmap
 
-*   **Storage adapters**: Implement `save_system` + loaders (Postgres, SQLite), graph serializers.
-*   **Vector DB support**: pgvector, Chroma, Milvus adapters.
-*   **Policy explanations**: richer decision traces for audit & explainability.
-*   **Daemons**: plug in real telemetry, rules, and automated remediation.
-*   **RoleMiner** improvements\*\*: production‑ready clustering & delta recommendations.
-*   **API server kit**: FastAPI example with middleware and JWT/session integration.
-*   **Docs site**: Tutorials, COU diagrams, API references, and larger examples.
+| Feature | Status |
+|---|---|
+| Recursive zones, permission calculus, constraints, daemons, neural, embeddings | ✅ Shipped |
+| UniLog toolkit integration | ✅ Shipped |
+| First-class `GammaMapping` type | 🔄 In progress |
+| Vector store adapters (pgvector, Chroma) | 🔄 In progress |
+| Web framework integrations (Django, FastAPI, Flask) | 🔄 In progress |
+| Distributed deployment | 📋 Planned |
+| Federated CZOA across organizations | 📋 Planned |
+| Automatic daemon synthesis from UniLang policies | 📋 Planned |
 
-If you have preferred priorities, I can tailor the backlog and open issues accordingly.
-
-***
+---
 
 ## Contributing
 
-Contributions are welcome!  
-Please open an issue describing:
+Contributions are welcome. Please read `CONTRIBUTING.md` first.
 
-*   the problem/use case,
-*   your proposed change, and
-*   any new dependencies or migration impacts.
+```bash
+# Set up a development environment
+git clone https://github.com/hongxueharriswang/czoi-toolkit.git
+cd czoi-toolkit
+pip install -e ".[dev,neural,embedding]"
 
-Then submit a PR with:
+# Run the tests
+pytest -q
 
-*   tests for new behavior,
-*   docs/examples updates, and
-*   clean commit history.
+# Check formatting
+ruff check czoi/
+```
 
-***
+Pull requests should:
 
-## Security Notes
+- Include tests for any new behaviour.
+- Preserve the ten-component minimality (no new state on `ZoneBase`).
+- Update the docstring of any modified public API.
+- Run clean under `pytest -q` and `ruff check`.
 
-*   The constraint **safe evaluator** blocks dangerous Python builtins and allows only a restricted AST. Still, treat all expressions as **untrusted input** and enforce **strict reviews** of constraint sources.
-*   Keep **telemetry** and **PII** handling aligned with your institutional policy and applicable regulations.
-*   For **production deployments**, enable proper logging, rotation, and SIEM forwarding.
-
-***
-
-## License
-
-This project is licensed under the **MIT License**. See LICENSE for details.
-
-***
+---
 
 ## Citation
 
-If you use CZOI in academic work, please cite:
+If you use this toolkit in academic work, please cite:
 
-    Wang, H. (2026). CZOI: A Python Toolkit for the Constrained Zoned-Object Architecture (CZOA).
+```bibtex
+@article{wang2026czoa,
+  author  = {Wang, Harris},
+  title   = {Constrained Zoned-Object Architecture (CZOA): A Unified
+             Framework for Building Secure and Intelligent Integrated
+             Organizational Systems},
+  journal = {Preprint},
+  year    = {2026}
+}
 
-*(Update the reference with any DOI, venue, or preprint link you prefer.)*
+@article{wang2026unilog,
+  author  = {Wang, Harris},
+  title   = {UniLog: A Unified Logic Framework for Constrained Object
+             Hierarchies and Constrained Zone-Object Architecture},
+  journal = {Preprint},
+  year    = {2026}
+}
 
-***
+@article{wang2025coh,
+  author  = {Wang, Harris},
+  title   = {Constrained Object Hierarchies as a Unified Theoretical
+             Model for Intelligence and Intelligent Systems},
+  journal = {Computers},
+  volume  = {14},
+  pages   = {478},
+  year    = {2025}
+}
+```
 
-## FAQ
+---
 
-**Q: Do I need a database to start?**  
-A: No. You can use in‑memory structures and the sample `FakeStorage`. Add a DB only when you need persistence and multi‑process coordination.
+## License
 
-**Q: How do γ‑mappings interact with constraints?**  
-A: The engine accumulates permissions from intra‑zone inheritance and γ‑mappings first, then evaluates **access constraints**; a failing constraint denies the request.
+MIT License. See [LICENSE](LICENSE) for details.
 
-**Q: Can I integrate with my existing IAM/IdP?**  
-A: Yes—map IdP attributes to `User.attributes`, resolve roles at login, and call `PermissionEngine.decide()` in your middleware before protected operations.
+---
 
-**Q: Can I explain “why” a decision happened?**  
-A: The current engine is straightforward to trace. We plan to add a **decision trace API** that returns the path (assignments → inheritance → γ‑mappings → constraints).
+## Acknowledgements
 
-***
+The CZOI toolkit builds directly on:
 
-## Troubleshooting
+- The **UniLog toolkit** for its constraint engine.
+- The **CZOA formalism** and its predecessors — **COH** and **ZRB**.
+- The **Viable System Model** (Beer 1972) for its hierarchical-organisation inspiration.
+- Two decades of research on **role-based access control** (RBAC), **attribute-based access control** (ABAC), and **separation of duty** in enterprise systems.
 
-*   **ImportError / hdbscan**: If you want to use HDBSCAN for role mining, install `hdbscan`:
-    ```bash
-    pip install hdbscan
-    ```
-    Or adjust `neural/components.py` to fallback to `DBSCAN`.
+---
 
-*   **`Permission: ALLOWED` hard‑coded in CLI check**: The CLI’s `check` command ships with placeholder lookups. Implement user/zone/operation retrieval or wire a loader in `storage/sqlalchemy.py`.
+## Contact
 
-*   **No logs from Daemons**: They are stubs by default. Point them at your telemetry, implement actions (e.g., create constraints on alerts), and configure logging (`utils/logging.py`).
-
-*   **Simulation shows all denials**: Ensure your users have roles in the **same zone** as the evaluated operation context, and verify that at least one granted permission path exists.
-
+- **Author**: Harris Wang — [harrisw@athabascau.ca](mailto:harrisw@athabascau.ca)
+- **Issues**: [github.com/hongxueharriswang/czoi-toolkit/issues](https://github.com/hongxueharriswang/czoi-toolkit/issues)
+- **Related**: [unilog-toolkit](https://github.com/hongxueharriswang/unilog-toolkit)
