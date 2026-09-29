@@ -1,6 +1,6 @@
 # CZOI Toolkit — User Guide
 
-**Version 1.0 · A guide to building secure, intelligent organizational systems with the Constrained Zoned-Object Architecture**
+**Version 1.1 · A guide to building secure, intelligent, and integrated organizational systems with the Constrained Zoned-Object Architecture**
 
 ---
 
@@ -19,12 +19,13 @@
 11. [Semantic Embeddings](#11-semantic-embeddings)
 12. [Adaptive Access Control](#12-adaptive-access-control)
 13. [Audit and Observability](#13-audit-and-observability)
-14. [Persistence and Web Frameworks](#14-persistence-and-web-frameworks)
-15. [Complete Worked Example](#15-complete-worked-example)
-16. [Cookbook](#16-cookbook)
-17. [Troubleshooting](#17-troubleshooting)
-18. [Best Practices](#18-best-practices)
-19. [API Reference](#19-api-reference)
+14. [Integrating Heterogeneous Systems](#14-integrating-heterogeneous-systems)
+15. [Persistence and Web Frameworks](#15-persistence-and-web-frameworks)
+16. [Complete Worked Examples](#16-complete-worked-examples)
+17. [Cookbook](#17-cookbook)
+18. [Troubleshooting](#18-troubleshooting)
+19. [Best Practices](#19-best-practices)
+20. [API Reference](#20-api-reference)
 
 ---
 
@@ -37,16 +38,32 @@ The **CZOI toolkit** is the reference Python implementation of the **Constrained
 - **Secure** — enforce strict, auditable access policies.
 - **Intelligent** — adapt to changing conditions through neural components.
 - **Organisation-aligned** — mirror the hierarchical structure of real enterprises.
+- **Integrable** — compose heterogeneous subsystems into a coherent federation without sacrificing local autonomy.
 
-The core idea is simple but powerful: **every organizational unit is a zone, and every zone is itself a full system.** A hospital is a zone. So is its Emergency department. So is a specific bed in the Emergency department. Each has its own roles, operations, constraints, daemons, and neural components. Each inherits from its parent. Each can be developed, tested, and deployed independently.
+The core idea is simple but powerful: **every organizational unit is a zone, and every zone is itself a full system.** A hospital is a zone. So is its Emergency department. So is a specific bed in the Emergency department. And so is a legacy mainframe wrapped in an adapter zone — a 20-year-old system that participates in the federation as a first-class citizen without being modified.
+
+Each zone has its own roles, operations, constraints, daemons, and neural components. Each inherits from its parent. Each can be developed, tested, and deployed independently. And each can be composed with its siblings under shared governance.
+
+### Three fragmentations, one solution
+
+Most modern organizations are not coherent systems — they are archipelagos of systems. Three fragmentations block coherent operation:
+
+1. **Intelligence vs. security.** AI models and access-control systems have evolved separately, with different abstractions, correctness criteria, and timescales.
+2. **Local autonomy vs. global governance.** Subunits want to evolve at their own rate; governance wants a single policy. Traditional architectures force a choice.
+3. **Heterogeneous systems vs. coherent operations.** Real organizations run on dozens of incompatible systems. Making them work together is the central challenge of modern enterprise IT.
+
+CZOA addresses all three with a single mechanism: recursive composition. Adapter zones integrate legacy systems without modification. The recursive permission calculus provides global integration guarantees without collapsing local autonomy. And neural components live inside every zone, so intelligence is preserved across subsystem boundaries.
 
 ### Who is this guide for?
 
-Software engineers, system architects, and researchers who need to build:
+Software engineers, system architects, integration architects, and researchers who need to build:
 
 - Enterprise access-control systems with formal security guarantees.
 - Adaptive systems that respond to changing conditions without violating policy.
 - System-of-systems architectures where each division retains local autonomy under global governance.
+- **Post-merger IT landscapes** that must unify without rewriting legacy systems.
+- **Multi-tenant platforms** where tenants need isolation and shared services.
+- **Federated consortia** where independent organizations must interoperate under shared rules.
 
 ### What you need to know
 
@@ -56,9 +73,9 @@ Software engineers, system architects, and researchers who need to build:
 
 ### Reading this guide
 
-Sections 3–7 are the **core tutorial** — read them in order. Sections 8–13 are **feature guides** you can dip into as needed. Sections 15–19 are **reference** material.
+Sections 3–7 are the **core tutorial** — read them in order. Sections 8–13 are **feature guides** you can dip into as needed. **Section 14 is the integration guide** — read it if you are federating heterogeneous systems. Sections 16–20 are **reference** material.
 
-Every code snippet in this guide is self-contained and runnable. You can copy them into a Python file and execute them.
+Every code snippet in this guide is self-contained and runnable.
 
 ---
 
@@ -87,7 +104,7 @@ pip install czoi-toolkit[dev]        # pytest, ruff, mypy
 
 ```python
 import czoi
-print(czoi.__version__)   # 1.0.0
+print(czoi.__version__)   # 1.1.0
 ```
 
 If this prints without error, you're ready. If you see `UniLogBridgeError` later, check that `unilog-toolkit` is installed:
@@ -174,6 +191,10 @@ print(engine.decide(bob,   edit_employee, hr).name)   # ALLOW
    - `DENY` — the user has a covering role but a constraint forbids it.
    - `INCONCLUSIVE` — no covering role found locally; a parent might override.
 
+> **Integration preview**
+>
+> In a federation, this same `decide` call transparently spans subsystem boundaries. A user in one subsystem requesting an operation in another subsystem flows through both subsystems' local decision functions, and the more restrictive constraint wins. Section 14 shows how to wire this up with adapter zones and the federation builder.
+
 ---
 
 ## 4. Core Concepts
@@ -186,27 +207,28 @@ Every CZOI zone is a 10-tuple:
 S = (Z, R, U, A, O, N, E, Γ, Φ, Δ)
 ```
 
-| Symbol | Name | What it holds |
-|---|---|---|
-| **Z** | Zones | Child subsystems (recursive) |
-| **R** | Roles | Job functions with base permissions |
-| **U** | Users | Identities with roles and attributes |
-| **A** | Applications | Structural modules (deployable units) |
-| **O** | Operations | Atomic executable actions |
-| **N** | Neural | Trainable functions (predictors, detectors) |
-| **E** | Embeddings | Semantic vectors + alignment |
-| **Γ** | Constraints | Identity, trigger, goal, access rules |
-| **Φ** | Permissions | Two-stage recursive decision function |
-| **Δ** | Daemons | Continuous monitoring processes |
+| Symbol | Name | What it holds | Integration role |
+|---|---|---|---|
+| **Z** | Zones | Child subsystems (recursive) | Composition operator |
+| **R** | Roles | Job functions with base permissions | Cross-system vocabulary |
+| **U** | Users | Identities with roles and attributes | Federated identity |
+| **A** | Applications | Structural modules (deployable units) | Origin signal for embeddings |
+| **O** | Operations | Atomic executable actions | Atomic interface contract |
+| **N** | Neural | Trainable functions (predictors, detectors) | Local models, no global retraining |
+| **E** | Embeddings | Semantic vectors + alignment | Vocabulary bridge across silos |
+| **Γ** | Constraints | Identity, trigger, goal, access rules | Shared governance layer |
+| **Φ** | Permissions | Two-stage recursive decision function | Cross-boundary decision flow |
+| **Δ** | Daemons | Continuous monitoring processes | Cross-zone health monitoring |
 
-These ten components are **orthogonal**: each has a distinct role and none of them overlaps with another. This is what makes CZOI minimal — the framework doesn't ask you to learn a dozen extra concepts that could be folded into these ten.
+These ten components are **orthogonal**: each has a distinct role and none of them overlaps with another. This is what makes CZOI minimal — and what makes it *composable*. If two components did the same job, you'd have to decide which one to use in each context, and the system would have internal ambiguity that breaks under composition.
 
-### AtomicZone vs CompositeZone
+### Three kinds of zone
 
-Every zone is either:
+CZOI provides two native zone types plus one integration-specific type:
 
 - **`CompositeZone`** (the default) — may contain child zones. `Z_z` may be non-empty.
 - **`AtomicZone`** — a leaf. Calling `add_zone` on it raises `TypeError`. `Z_z = ∅`.
+- **`AdapterZone`** — a leaf whose internal behaviour is opaque, wrapping a legacy or external system through a declared interface. The mechanism for integrating systems that were not built with CZOI in mind.
 
 ```python
 # Explicit composite
@@ -215,8 +237,8 @@ hospital = builder.add_zone("Hospital")              # CompositeZone
 # Explicit atomic
 emergency = builder.add_zone("Emergency", parent=hospital, atomic=True)
 
-# This would raise TypeError:
-# emergency.add_zone(AtomicZone("something"))
+# Adapter zone wrapping a legacy system
+legacy_hr = AdapterZone(name="LegacyHR", adapter=MyHRAdapter())
 ```
 
 ### Applications vs Operations
@@ -243,6 +265,7 @@ Why this matters:
 - **Minimality**: if applications were permission targets, you'd need two parallel permission systems — one for apps and one for ops. CZOI avoids that.
 - **Granularity**: you can grant a role the ability to `view_payroll` without granting `edit_payroll`, even if they're in the same application.
 - **Auditing**: every access log entry names a specific operation, not a vague "used the Payroll app."
+- **Integration**: operations are the atomic interface contract between subsystems. Two subsystems are integrable at the operation level whenever their operations can be mapped to each other.
 
 ---
 
@@ -300,6 +323,10 @@ cs.add_user(alice)          # OK — parent already has alice
 # Attempting to register at a child before the parent raises:
 # cs.add_user(other_user)   # raises ZoneContainmentError
 ```
+
+> **Containment and integration**
+>
+> Containment is what makes shared governance tractable in a federation: the merged authority sees every user in every subsystem, but each subsystem sees only its own users. Authority flows downward; autonomy is preserved upward. This is the structural reason why CZOI federations can impose shared policy without intruding into how each subsystem operates internally.
 
 ### Ancestry and depth
 
@@ -432,6 +459,10 @@ def register_along_path(user, zone):
 register_along_path(alice, emergency)   # adds to Emergency, Hospital, Root
 ```
 
+> **Role taxonomies and integration**
+>
+> When two subsystems come from different origins — a merger, an acquisition, a partner API — their role taxonomies are typically distinct. CZOI preserves both: each subsystem keeps its own roles internally, and the federation discovers semantic equivalence between roles across subsystems using the embedding alignment functor. Section 14 shows how this works in practice.
+
 ---
 
 ## 7. The Permission Calculus
@@ -509,6 +540,7 @@ print(engine.stats())
 ```
 
 **The cache is invalidated automatically** when you:
+
 - Call `zone.grant(role, op)` or `zone.revoke(role, op)`.
 - Add a new role to a zone.
 - Add a new user to a zone.
@@ -545,6 +577,10 @@ Each `DecisionRecord` has:
 | `zone` | Zone name |
 | `decision` | `Decision` enum |
 | `stage` | `"local"`, `"parent-override"`, `"root-deny"`, or `"cache"` |
+
+> **Cross-zone decisions**
+>
+> In a federation, a decision for a user in subsystem A requesting an operation in subsystem B traverses both subsystems' local decision functions. The audit record shows the full path — including which subsystem imposed which constraint. This is what makes cross-subsystem compliance auditable, not just observable.
 
 ---
 
@@ -627,15 +663,9 @@ The `CZOIModel` automatically exposes:
 | `hasRole(u, r)` | User `u` holds role `r` |
 | `canPerform(u, o)` | User `u` is allowed to perform operation `o` |
 
-And one built-in function:
-
-| Function | Meaning |
-|---|---|
-| `parent(z)` | The parent zone of `z` (or `z` itself for the root) |
+And one built-in function: `parent(z)` — the parent zone of `z` (or `z` itself for the root).
 
 ### Custom predicates
-
-You can register your own predicates to bridge business rules into the constraint language:
 
 ```python
 builder.register_predicate(
@@ -661,19 +691,14 @@ builder.add_access_constraint("""
 """)
 ```
 
-The `CZOIModel` evaluates predicates against the live system — the constraint sees the real state, not a snapshot.
-
 ### Checking constraints manually
 
 ```python
 results = builder.constraint_manager.check_all()
 for kind, ok in results.items():
     print(f"{kind}: {'OK' if ok else 'VIOLATED'}")
-```
 
-Or against a specific zone:
-
-```python
+# Or against a specific zone:
 results = builder.constraint_manager.check_zone(emergency)
 ```
 
@@ -686,6 +711,14 @@ Access constraints (`C` kind) are evaluated automatically inside the permission 
 3. If any access constraint fails → `DENY`.
 
 This is why you get `DENY` vs `INCONCLUSIVE`: the former means a constraint blocked you; the latter means no role covered you.
+
+> **Shared constraints in a federation**
+>
+> When subsystems are federated, the parent can impose **shared constraints** that apply to every subsystem. A child can add stricter local constraints, but cannot weaken a parent's. This is the formal mechanism by which shared governance is imposed on independent actors without violating their internal policies — and it is a one-line operation on the federation builder:
+>
+> ```python
+> fed.share_constraint("""... UniLang ...""")
+> ```
 
 ---
 
@@ -779,18 +812,12 @@ The `DaemonManager` runs each daemon's `monitor()` in a thread from a `ThreadPoo
 
 ### Per-daemon intervals
 
-Each daemon declares its own interval (in seconds):
-
 ```python
 BatteryDaemon(robots, parent=fleet, interval=0.5)   # every 500 ms
 OvercurrentDaemon(zones, parent=fleet, interval=2.0) # every 2 s
 ```
 
-The `DaemonManager` schedules each daemon independently.
-
 ### Error isolation
-
-`Daemon.safe_monitor()` wraps `monitor()` in a try/except. A daemon that raises does not crash its siblings:
 
 ```python
 def safe_monitor(self):
@@ -804,6 +831,10 @@ def safe_monitor(self):
 
 The `DaemonManager` always calls `safe_monitor`, never `monitor` directly.
 
+> **Cross-zone daemons**
+>
+> In a federation, **cross-zone daemons** observe pairs of subsystems and emit into their common ancestor. They detect integration issues before they become incidents: vocabulary drift (a subsystem's roles gradually diverge from the shared taxonomy), latency spikes in cross-zone flows, and anomalous interaction patterns. Section 14 shows how to wire these up.
+
 ---
 
 ## 10. Neural Components
@@ -811,8 +842,6 @@ The `DaemonManager` always calls `safe_monitor`, never `monitor` directly.
 The toolkit ships with three neural primitives plus a wrapper for arbitrary models.
 
 ### Predictor
-
-A trainable linear model with sigmoid output. Good for binary classification and probability estimation.
 
 ```python
 from czoi import Predictor
@@ -834,15 +863,7 @@ predictor.fires({"hr": 0.8, "temp": 0.9, "lactate": 0.7})
 predictor = Predictor("rule", fn=lambda f: 1.0 if f["x"] > 5 else 0.0)
 ```
 
-You can also pass numpy arrays directly:
-
-```python
-predictor.predict(np.array([0.8, 0.9, 0.7]))
-```
-
 ### AnomalyDetector
-
-An autoencoder trained on normal data. Flags samples whose reconstruction error exceeds a calibrated threshold.
 
 ```python
 from czoi import AnomalyDetector
@@ -867,31 +888,30 @@ detector.score(sample)             # float (reconstruction error)
 detector.is_anomalous(sample)      # bool (score > calibrated threshold)
 ```
 
-After `fit`, `detector.threshold` is set to the 95th percentile of training scores — the toolkit's equivalent of `contamination=0.05`.
+After `fit`, `detector.threshold` is set to the 95th percentile of training scores.
 
-**Important:** always z-score normalise your features before fitting. The autoencoder uses tanh activations; unscaled features dominate the loss.
-
-```python
-mean = X_normal.mean(axis=0)
-std = X_normal.std(axis=0)
-X_normal_norm = (X_normal - mean) / std
-```
+> ⚠️ **Important**
+>
+> Always z-score normalise your features before fitting. The autoencoder uses tanh activations; unscaled features dominate the loss.
+>
+> ```python
+> mean = X_normal.mean(axis=0)
+> std = X_normal.std(axis=0)
+> X_normal_norm = (X_normal - mean) / std
+> ```
 
 ### RoleMiner
-
-Unsupervised discovery of role structures from historical access logs. Implements the paper's §5.1 pipeline: autoencoder + clustering.
 
 ```python
 from czoi import RoleMiner
 import numpy as np
 
 # Binary matrix: rows = users, columns = operations
-# X[i, j] = 1 iff user i has ever used operation j
 X = np.array([
-    [1, 1, 0, 0],   # user 0
-    [1, 1, 0, 0],   # user 1
-    [0, 0, 1, 1],   # user 2
-    [0, 0, 1, 1],   # user 3
+    [1, 1, 0, 0],
+    [1, 1, 0, 0],
+    [0, 0, 1, 1],
+    [0, 0, 1, 1],
 ], dtype=float)
 
 op_names = ["A.read", "A.write", "B.read", "B.write"]
@@ -907,11 +927,7 @@ print(result.confidence)
 print(result.n_clusters)   # 2
 ```
 
-The miner uses `sklearn.cluster.HDBSCAN` when available, falling back to `AgglomerativeClustering`.
-
 ### Custom neural components
-
-Any object with the right interface works as a neural component:
 
 ```python
 class MyModel:
@@ -930,6 +946,10 @@ def hook(user, operation, zone, base):
         return Decision.DENY
     return base
 ```
+
+> **Local intelligence in federations**
+>
+> In a federation, neural components are *strictly local*. Each subsystem keeps its own models, trained on its own data, without any requirement to share them or re-train them globally. The federation composes their *outputs*, not their *state*. This is what preserves local autonomy while enabling shared governance — each subsystem's intelligence remains its own, even as the federation's policy applies to all.
 
 ---
 
@@ -952,8 +972,6 @@ similarity = emb.similarity(v_op, v_role)
 
 ### With transformer backend
 
-For semantically meaningful embeddings, install `sentence-transformers` and request the transformer:
-
 ```python
 emb = EmbeddingService(
     model_name="all-MiniLM-L6-v2",
@@ -974,14 +992,12 @@ emb.similarity(v1, v3)   # low — unrelated domains
 
 ### Global alignment functor
 
-The paper's `E_align` projects local embeddings into a shared space, enabling cross-zone similarity. In the toolkit:
-
 ```python
 v_local = emb.embed("Emergency:attending_physician")
 v_global = emb.align_to_global(v_local)
 ```
 
-By default this is a unit-normalisation. You can train an alignment matrix on labelled positives and negatives:
+You can train an alignment matrix on labelled positives and negatives:
 
 ```python
 positives = [
@@ -1003,25 +1019,9 @@ emb.save_alignment("alignment.npy")
 emb.load_alignment("alignment.npy")
 ```
 
-### Use case: cross-zone role matching
-
-Give a senior role in one zone the permissions of a semantically similar role in another zone:
-
-```python
-def match_roles(source_role, target_zone, threshold=0.75):
-    source_vec = emb.embed_role(source_role)
-    for role in target_zone.roles.values():
-        target_vec = emb.embed_role(role)
-        if emb.similarity(source_vec, target_vec) > threshold:
-            yield role
-
-# Apply a gamma-like mapping based on semantics
-for matched in match_roles(attending, icu_zone):
-    for op in matched.base_permissions:
-        attending.grant(op)
-```
-
-This is the paper's §5.2 "cross-zone understanding" pattern.
+> **The alignment functor is the integration mechanism**
+>
+> When two subsystems come from different origins — a merger, an acquisition, a partner API — they use different vocabulary for the same concepts. The alignment functor projects both subsystems' local embeddings into a shared Hilbert space, revealing semantic equivalence. This is the technical mechanism by which CZOI integrates heterogeneous vocabularies: even if two subsystems name the same operation differently, the aligned embeddings still reveal the equivalence. In the paper's post-merger case study, this mechanism discovered 47 semantically equivalent role pairs across two legacy taxonomies — a task that would otherwise have consumed several weeks of manual effort.
 
 ---
 
@@ -1032,8 +1032,6 @@ The toolkit's signature capability: **permissions that adapt to changing conditi
 ### The basic idea
 
 During a surge (a flu outbreak, a trading crash, a supply-chain disruption), the system may need to grant someone a permission they don't normally have. But it must do so without opening a security hole.
-
-The toolkit's `NeuralContribution` hook lets a neural component influence a decision:
 
 ```python
 from czoi import NeuralContribution
@@ -1069,11 +1067,7 @@ builder.root.properties.set("surge_active", False)
 builder.permission_engine.invalidate()
 ```
 
-The cache invalidation ensures the change takes effect immediately.
-
 ### Dynamic grants
-
-An alternative to a hook: use the zone's `grant` method to permanently transfer a permission, then `revoke` it later.
 
 ```python
 # During surge
@@ -1092,12 +1086,6 @@ An adaptive update is safe iff:
 1. It preserves monotonicity — permissions only increase without explicit revocation.
 2. It satisfies all identity and access constraints.
 3. It maintains a complete audit trail.
-
-The toolkit helps you satisfy these:
-
-- `zone.grant` / `zone.revoke` are the only supported ways to change permissions at runtime.
-- Every change is recorded when `audit_enabled=True`.
-- Access constraints are evaluated on every decision.
 
 ### When to use a hook vs a grant
 
@@ -1134,7 +1122,7 @@ for r in builder.permission_engine.audit[-10:]:
           f"→ {r.decision.name:<14} via {r.stage}")
 ```
 
-Example output:
+**Example output:**
 
 ```
 14:23:01  alice        EMR.prescribe                 @Emergency       → ALLOW          via local
@@ -1155,30 +1143,7 @@ print(stats)
 - **parent_lookups** — number of times the recursive parent lookup fired.
 - **denies** — total deny decisions.
 
-Track these over time to detect performance regressions or unexpected denial spikes.
-
-### Daemon signals
-
-Each daemon collects signals in its own fields:
-
-```python
-class FleetDaemon(Daemon):
-    def on_signal(self, signal, payload, source=None):
-        if signal is DaemonSignal.STATE_WARNING:
-            self.warnings.append((source.name, payload))
-        elif signal is DaemonSignal.STATE_CRITICAL:
-            self.criticals.append((source.name, payload))
-```
-
-Expose these as metrics for your observability stack:
-
-```python
-# Prometheus-style
-prometheus_client.Gauge("fleet_warnings_total").set(len(fleet.warnings))
-prometheus_client.Gauge("fleet_criticals_total").set(len(fleet.criticals))
-```
-
-### Integrating with structured logging
+### Structured logging
 
 ```python
 import logging
@@ -1202,7 +1167,341 @@ for record in builder.permission_engine.audit:
 
 ---
 
-## 14. Persistence and Web Frameworks
+## 14. Integrating Heterogeneous Systems
+
+This section is the integration guide. It shows how to wrap legacy systems as adapter zones, federate independent subsystems under shared governance, discover semantically equivalent roles across subsystems, and verify that integration is sound.
+
+### Why integration is different from composition
+
+In traditional RBAC, integration means writing adapters between systems. Each adapter is bespoke, unverified, and fragile: change either side and the adapter breaks. Integration is O(n²) in the number of systems and O(n) in maintenance effort per system change.
+
+CZOI takes a different approach. Integration is **composition of CZOI systems under a common parent**. The composition is a formal operation with verifiable properties (the Integration Theorem, §14.6). Adapter zones present a CZOI interface over legacy systems, so composition treats them identically to native subsystems. Adding a new subsystem is O(1) in the number of existing subsystems; changing one subsystem does not affect the others.
+
+### Adapter zones
+
+An **adapter zone** is a leaf CZOI subsystem whose internal behaviour is opaque, but whose interface — a set of roles, operations, and constraints — is declared explicitly. It wraps a legacy system, a third-party SaaS platform, or an external partner API.
+
+#### The adapter protocol
+
+An adapter must implement two methods:
+
+```python
+class AdapterProtocol:
+    def execute(self, operation_name: str, user_name: str,
+                kwargs: dict) -> object:
+        """Execute the operation against the underlying system."""
+
+    def describe_interface(self) -> dict:
+        """Return {operations, roles, properties} for the wrapped system."""
+```
+
+#### Wrapping a legacy HR system
+
+```python
+from czoi import AdapterZone, Operation, Role
+
+class LegacyHRAdapter:
+    """Adapter for a 20-year-old HR system."""
+
+    def __init__(self, connection_string):
+        self.conn = legacy_connect(connection_string)
+
+    def execute(self, operation_name, user_name, kwargs):
+        if operation_name == "LegacyHR.view_employee":
+            return self.conn.read_employee(kwargs["employee_id"])
+        elif operation_name == "LegacyHR.edit_employee":
+            return self.conn.update_employee(
+                kwargs["employee_id"], kwargs["changes"],
+            )
+        raise ValueError(f"Unknown operation: {operation_name}")
+
+    def describe_interface(self):
+        return {
+            "operations": ["view_employee", "edit_employee"],
+            "roles": ["HRViewer", "HREditor"],
+        }
+
+# Wrap the legacy system as a CZOI zone
+legacy_hr = AdapterZone(
+    name="LegacyHR",
+    adapter=LegacyHRAdapter("sql://legacy-hr.internal"),
+)
+
+# Declare the CZOI-facing interface
+view_employee = Operation("view_employee")
+edit_employee = Operation("edit_employee")
+legacy_hr.expose_operations({
+    "view_employee": view_employee,
+    "edit_employee": edit_employee,
+})
+
+hr_viewer = Role("HRViewer", zone=legacy_hr,
+                 base_permissions=[view_employee])
+hr_editor = Role("HREditor", zone=legacy_hr,
+                 base_permissions=[view_employee, edit_employee])
+hr_editor.add_junior(hr_viewer)
+legacy_hr.add_role(hr_viewer)
+legacy_hr.add_role(hr_editor)
+```
+
+From the federation's perspective, `legacy_hr` is indistinguishable from a natively built zone. Its internal state is opaque; only its declared interface participates in permission checks, constraint evaluation, and audit. **The legacy system has not been modified in any way.**
+
+### Federating independent subsystems
+
+Once each subsystem is exposed as a zone, federation is a composition operation.
+
+```python
+from czoi import FederationBuilder
+
+fed = FederationBuilder("MergedHealthAuthority")
+
+# Adopt each subsystem under a common parent
+fed.adopt_subsystem(legacy_hr_a, name="LegacyRegionA")
+fed.adopt_subsystem(legacy_hr_b, name="LegacyRegionB")
+fed.adopt_subsystem(shared_services, name="SharedServices")
+
+# Impose shared governance at the parent level
+fed.share_constraint("""
+    signature {
+        sort User, Role;
+        constant HRViewer : Role;
+        constant FinanceApprover : Role;
+        predicate hasRole(u: User, r: Role);
+    }
+    forall u: User .
+        not (hasRole(u, HRViewer) and hasRole(u, FinanceApprover))
+""")
+
+# Wire cross-zone monitoring
+fed.add_cross_zone_daemon(FederationHealthDaemon())
+
+# The federation is a full CZOI system
+engine = fed.permission_engine
+print(engine.decide(alice, view_employee, legacy_hr_a).name)
+```
+
+The federation is a CZOI system. It has a permission engine, a constraint manager, a daemon manager, and embeddings — all shared with its subsystems, exactly as in a native CZOI tree.
+
+### Discovering role equivalence across subsystems
+
+In a merger, the two legacy systems likely have semantically equivalent roles under different names. The alignment functor discovers these automatically.
+
+```python
+def discover_role_equivalences(zone_a, zone_b, threshold=0.75):
+    """Find semantically equivalent roles across two subsystems."""
+    equivalences = []
+    for role_a in zone_a.roles.values():
+        vec_a = emb.embed_role(role_a)
+        for role_b in zone_b.roles.values():
+            vec_b = emb.embed_role(role_b)
+            sim = emb.similarity(vec_a, vec_b)
+            if sim > threshold:
+                equivalences.append((role_a, role_b, sim))
+    return sorted(equivalences, key=lambda x: -x[2])
+
+# Find equivalent roles across the two legacy regions
+equivalences = discover_role_equivalences(legacy_hr_a, legacy_hr_b)
+for role_a, role_b, sim in equivalences[:5]:
+    print(f"{role_a.name} ↔ {role_b.name}: {sim:.3f}")
+```
+
+The discovered equivalences are not automatically applied — a human reviewer approves them, typically via a mapping table that becomes part of the cross-zone integration relation (ι). This preserves the human-in-the-loop guarantee that enterprise integration demands.
+
+### Cross-zone integration relations
+
+Two sibling zones compose via a **cross-zone integration relation** — a 4-tuple (γ, C, δ, ε):
+
+- **γ** — a set of inter-zone role mappings that transfer permissions between subsystems.
+- **C** — a set of shared constraints (access, identity, trigger, goal) that both subsystems must respect.
+- **δ** — a set of cross-zone daemons that monitor the interaction between the two subsystems.
+- **ε** — a cross-zone embedding alignment that projects both subsystems' vocabularies into a shared space.
+
+```python
+# Add an integration relation between two sibling subsystems
+fed.integrate(
+    from_zone=legacy_hr_a,
+    to_zone=legacy_hr_b,
+    gamma=[
+        # Maps: HRViewer@A ≃ HRViewer@B (weight 1.0)
+        (legacy_hr_a.roles["HRViewer"],
+         legacy_hr_b.roles["HRViewer"],
+         1.0),
+    ],
+    shared_constraints=[
+        """forall u: User .
+           not (hasRole(u, HRViewer) and hasRole(u, FinanceApprover))""",
+    ],
+    cross_zone_daemons=[CrossRegionDriftDaemon()],
+    embedding_alignment=True,
+)
+```
+
+### The Integration Theorem
+
+Federation is formally sound. The Integration Theorem (Theorem 5 in the paper) guarantees that:
+
+> Let $S_1$ and $S_2$ be two independent, soundly integrated CZOI systems with no shared operations. Then the composed federation $S = S_1 \oplus S_2$ under a new common parent satisfies:
+>
+> 1. $S$ is a well-formed CZOI system.
+> 2. Every identity constraint of $S_1$ and $S_2$ holds in $S$.
+> 3. Every access constraint of $S_1$ and $S_2$ holds in $S$.
+> 4. Any additional constraint on the parent is enforced for both subsystems.
+
+The corollary applies directly to mergers:
+
+> **Corollary (Post-Merger Integration Guarantee).** In a post-merger scenario where two legacy organizations are integrated under a new parent authority, if both legacy systems are soundly integrated CZOI systems, the merger preserves each legacy system's security guarantees while enabling explicit cross-system policy at the authority level.
+
+### Three integration patterns
+
+Every realistic federation is a composition of three fundamental patterns:
+
+| Pattern | Categorical name | Use case |
+|---|---|---|
+| **Parallel integration** | Product (×) | Post-merger integration, multi-tenant SaaS, federated identity |
+| **Alternative integration** | Coproduct (+) | A/B testing, blue-green deployment, geographic failover |
+| **Governed integration** | Exponential (→) | Parent company governs subsidiary, regulator supervises regulated entity |
+
+### End-to-end integration example
+
+Let's federate a legacy HR system and a new finance system into a single federated organization.
+
+```python
+from czoi import (
+    AdapterZone, CZOABuilder, FederationBuilder, Operation, Role, User,
+)
+
+# ---- 1. Wrap the legacy HR system ---------------------------------
+legacy_hr = AdapterZone(name="LegacyHR", adapter=MyHRAdapter())
+legacy_hr.expose_operations({
+    "view_employee": Operation("view_employee"),
+})
+legacy_hr.add_role(Role("HRViewer", zone=legacy_hr,
+                        base_permissions=[list(legacy_hr.operations.values())[0]]))
+
+# ---- 2. Build the new finance system ------------------------------
+finance_builder = CZOABuilder("Finance")
+finance_app = Application("FinanceApp", zone=finance_builder.root)
+approve = finance_app.add_operation(Operation("approve_invoice"))
+finance_builder.root.add_application(finance_app)
+finance_builder.root.add_role(
+    Role("FinanceApprover", zone=finance_builder.root,
+         base_permissions=[approve])
+)
+
+# ---- 3. Federate under a shared parent ----------------------------
+fed = FederationBuilder("MergedCorp")
+fed.adopt_subsystem(legacy_hr, name="LegacyHR")
+fed.adopt_subsystem(finance_builder, name="Finance")
+
+# ---- 4. Share a separation-of-duty constraint ---------------------
+fed.share_constraint("""
+    signature {
+        sort User, Role;
+        constant HRViewer : Role;
+        constant FinanceApprover : Role;
+        predicate hasRole(u: User, r: Role);
+    }
+    forall u: User .
+        not (hasRole(u, HRViewer) and hasRole(u, FinanceApprover))
+""")
+
+# ---- 5. Create users in the federation ----------------------------
+alice = User("alice", roles={"HRViewer"})
+fed.root.add_user(alice)
+legacy_hr.add_user(alice)
+
+bob = User("bob", roles={"FinanceApprover"})
+fed.root.add_user(bob)
+finance_builder.root.add_user(bob)
+
+# ---- 6. The federation is a CZOI system ---------------------------
+engine = fed.permission_engine
+print(engine.decide(alice, list(legacy_hr.operations.values())[0],
+                    legacy_hr).name)   # ALLOW
+print(engine.decide(bob, approve, finance_builder.root).name)   # ALLOW
+
+# A user with both roles would be denied by the shared SoD constraint.
+charlie = User("charlie", roles={"HRViewer", "FinanceApprover"})
+fed.root.add_user(charlie)
+legacy_hr.add_user(charlie)
+finance_builder.root.add_user(charlie)
+print(engine.decide(charlie, approve, finance_builder.root).name)   # DENY
+```
+
+### Cross-zone monitoring
+
+Cross-zone daemons observe subsystem interactions and emit into the federation's common ancestor:
+
+```python
+from czoi import Daemon, DaemonSignal
+
+class VocabularyDriftDaemon(Daemon):
+    """Detects when two subsystems' role vocabularies diverge."""
+
+    def __init__(self, zone_a, zone_b, threshold=0.2, parent=None):
+        super().__init__("VocabularyDrift", parent=parent, interval=60.0)
+        self.zone_a = zone_a
+        self.zone_b = zone_b
+        self.threshold = threshold
+
+    def monitor(self):
+        # Compare current role sets
+        roles_a = set(self.zone_a.roles.keys())
+        roles_b = set(self.zone_b.roles.keys())
+        drift = len(roles_a.symmetric_difference(roles_b)) \
+              / max(len(roles_a | roles_b), 1)
+        if drift > self.threshold:
+            self.emit_signal(
+                DaemonSignal.STATE_WARNING,
+                {"event": "vocabulary_drift", "drift": drift},
+            )
+
+class FederationHealthDaemon(Daemon):
+    """Root daemon: aggregates cross-zone health signals."""
+
+    def __init__(self, parent=None):
+        super().__init__("FederationHealth", parent=parent, interval=30.0)
+        self.drift_events = []
+        self.latency_events = []
+
+    def on_signal(self, signal, payload, source=None):
+        if payload.get("event") == "vocabulary_drift":
+            self.drift_events.append((source.name, payload))
+
+fed.add_cross_zone_daemon(FederationHealthDaemon())
+fed.add_cross_zone_daemon(
+    VocabularyDriftDaemon(legacy_hr_a, legacy_hr_b),
+)
+```
+
+### Verifying integration soundness
+
+You can verify integration soundness programmatically:
+
+```python
+from czoi.federation import verify_integration
+
+report = verify_integration(fed)
+print(report.summary())
+# Integration Report
+# ------------------
+# Well-formedness       : OK
+# Identity preservation : OK
+# Access preservation   : OK
+# Constraint flow       : OK
+# Cross-zone daemons    : OK
+# Audit completeness    : OK
+```
+
+If any property is violated, the report identifies the specific subsystem and constraint involved.
+
+> **Real-world impact**
+>
+> In the paper's post-merger case study, a CZOI federation formed from two legacy health authorities achieved a **61% reduction in integration time**, **100% elimination of duplicate role definitions**, and **zero modifications to the legacy systems**. Both legacy systems retained their compliance certifications, and cross-region specialist consults — impossible in the pre-merger state — became available immediately.
+
+---
+
+## 15. Persistence and Web Frameworks
 
 The toolkit is persistence-agnostic. Zones are runtime objects; persistence is a separate concern.
 
@@ -1243,22 +1542,6 @@ def build_runtime():
     return builder
 ```
 
-```python
-# service.py — combine runtime + persistence
-class GridService:
-    def __init__(self):
-        self.builder = build_runtime()
-        self.engine = self.builder.permission_engine
-
-    def dispatch(self, user_name, operation_name):
-        user = self.builder.root.users[user_name]
-        op = self.builder.root.operations[operation_name]
-        decision = self.engine.decide(user, op, self.builder.root)
-        if decision.name == "ALLOW":
-            SensorReading.objects.create(...)
-        return decision
-```
-
 ### Example: FastAPI
 
 ```python
@@ -1280,19 +1563,26 @@ def dispatch(operation: str, user: str = Depends(current_user)):
     return {"status": "ok"}
 ```
 
-The toolkit imposes no framework requirements. The integration is a few lines of glue.
+### Persistence in a federation
+
+In a federation, each subsystem can use its own persistence strategy — a legacy database, a modern ORM, a document store. The federation itself only persists:
+
+- The integration relations (γ, C, δ, ε) between subsystems.
+- The shared constraints imposed at the parent level.
+- The audit trail of cross-subsystem decisions.
+- The role equivalence mappings discovered by the alignment functor.
+
+This is what makes federation lightweight: the subsystems keep their own data, and the federation only persists the composition metadata.
 
 ---
 
-## 15. Complete Worked Example
+## 16. Complete Worked Examples
 
-Let's build a small hospital system end-to-end, exercising every feature.
+Two worked examples, each demonstrating a different aspect of CZOI. The first is a native hospital system exercising every feature; the second is a post-merger federation integrating two legacy health authorities.
 
-### The scenario
+### Example A — A native hospital system
 
 A regional health authority manages multiple hospitals. Each hospital has an Emergency department. During a flu outbreak, senior nurses need temporary authority to prescribe.
-
-### Step 1: Structure
 
 ```python
 from czoi import (
@@ -1306,11 +1596,8 @@ region = builder.root
 hosp_a = builder.add_zone("CityHospitalA", parent=region)
 emerg_a = builder.add_zone("Emergency", parent=hosp_a, atomic=True)
 icu_a = builder.add_zone("ICU", parent=hosp_a, atomic=True)
-```
 
-### Step 2: Operations and roles
-
-```python
+# Operations and roles
 app = Application("EMR", zone=hosp_a)
 prescribe = app.add_operation(Operation("prescribe"))
 dispense = app.add_operation(Operation("dispense"))
@@ -1328,11 +1615,8 @@ senior_nurse.add_junior(nurse)
 hosp_a.add_role(attending)
 hosp_a.add_role(senior_nurse)
 hosp_a.add_role(nurse)
-```
 
-### Step 3: Users
-
-```python
+# Users
 def register_along_path(user, zone):
     for z in zone.ancestry():
         if user.name not in z.users:
@@ -1340,16 +1624,11 @@ def register_along_path(user, zone):
 
 alice = User("alice", roles={"AttendingPhysician"})
 bob = User("bob", roles={"SeniorNurse"})
-carol = User("carol", roles={"Nurse"})
-
-for u in [alice, bob, carol]:
+for u in [alice, bob]:
     register_along_path(u, emerg_a)
     register_along_path(u, icu_a)
-```
 
-### Step 4: Constraints
-
-```python
+# Constraints
 builder.add_access_constraint("""
     signature {
         sort User;
@@ -1358,45 +1637,18 @@ builder.add_access_constraint("""
     }
     forall u: User . not (prescribe(u) and dispense(u))
 """)
-```
 
-This is a separation-of-duty rule: no single user should be able to both prescribe and dispense (to prevent fraud).
-
-### Step 5: Neural component
-
-```python
+# Neural component: sepsis model
 import numpy as np
-
 sepsis_model = Predictor("sepsis", threshold=0.85)
-X = np.array([
-    [0.6, 0.4, 0.2],   # normal vitals
-    [0.9, 0.8, 0.9],   # septic vitals
-])
-y = np.array([0.0, 1.0])
-sepsis_model.fit(X, y, epochs=500)
-
+sepsis_model.fit(
+    X=np.array([[0.6, 0.4, 0.2], [0.9, 0.8, 0.9]]),
+    y=np.array([0.0, 1.0]),
+    epochs=500,
+)
 hosp_a.add_neural("sepsis", sepsis_model)
-```
 
-### Step 6: Daemons
-
-```python
-class ClinicalSafetyDaemon(Daemon):
-    def __init__(self, model, threshold=0.85, parent=None):
-        super().__init__("ClinicalSafety", parent=parent, interval=1.0)
-        self.model = model
-        self.threshold = threshold
-
-    def monitor(self):
-        # In a real system, iterate over active patients
-        # Here we simulate an alert
-        score = self.model.predict({"hr": 0.9, "temp": 0.8, "lactate": 0.9})
-        if score > self.threshold:
-            self.emit_signal(
-                DaemonSignal.STATE_WARNING,
-                {"score": round(score, 3), "reason": "sepsis_risk"},
-            )
-
+# Daemons
 class SurgeDaemon(Daemon):
     def __init__(self, hospital, parent=None):
         super().__init__("SurgeDaemon", parent=parent, interval=5.0)
@@ -1424,58 +1676,141 @@ class DirectorDaemon(Daemon):
             self.surge_active = True
             senior = self.hospital.roles["SeniorNurse"]
             self.hospital.grant(senior, self.ops["prescribe"])
-```
 
-### Step 7: Wire it up
-
-```python
 director = DirectorDaemon(hosp_a, {"prescribe": prescribe})
-safety = ClinicalSafetyDaemon(sepsis_model, parent=director)
 surge = SurgeDaemon(hosp_a, parent=director)
-
 builder.add_daemon(director)
-builder.add_daemon(safety)
 builder.add_daemon(surge)
-```
 
-### Step 8: Run it
-
-```python
+# Run
 engine = builder.permission_engine
+print("Normal:", engine.decide(bob, prescribe, hosp_a).name)   # INCONCLUSIVE
 
-# Normal conditions
-print("Normal:")
-print(f"  bob prescribe: {engine.decide(bob, prescribe, hosp_a).name}")
-# INCONCLUSIVE — SeniorNurse doesn't have prescribe
-
-# Simulate a surge
 hosp_a.properties.set("recent_arrivals", 200)
 for _ in range(10):
     builder.daemon_manager.tick()
 
-print("\nDuring surge:")
-print(f"  bob prescribe: {engine.decide(bob, prescribe, hosp_a).name}")
-# ALLOW — SurgeDaemon triggered DirectorDaemon to grant prescribe
-
-# Audit trail
-print("\nAudit:")
-for r in builder.permission_engine.audit:
-    print(f"  {r.user} {r.operation} @{r.zone} → {r.decision.name}")
+print("During surge:", engine.decide(bob, prescribe, hosp_a).name)   # ALLOW
 ```
 
-### What this example demonstrates
+### Example B — A post-merger federation
 
-- **Recursive zones** — region → hospital → emergency/ICU.
+Two legacy health authorities are integrated under a new parent authority. Each retains its own legacy EMR; a shared services zone provides cross-region workflows.
+
+```python
+from czoi import (
+    AdapterZone, CZOABuilder, FederationBuilder, Operation, Role, User,
+)
+
+# ---- 1. Wrap the two legacy EMRs as adapter zones -----------------
+region_a = AdapterZone(name="LegacyRegionA", adapter=RegionAAdapter())
+region_a.expose_operations({
+    "view_patient": Operation("view_patient"),
+    "order_consult": Operation("order_consult"),
+})
+region_a.add_role(Role("AttendingPhysician", zone=region_a,
+                       base_permissions=list(region_a.operations.values())))
+
+region_b = AdapterZone(name="LegacyRegionB", adapter=RegionBAdapter())
+region_b.expose_operations({
+    "view_patient": Operation("view_patient"),
+    "order_consult": Operation("order_consult"),
+})
+region_b.add_role(Role("ConsultingSpecialist", zone=region_b,
+                       base_permissions=list(region_b.operations.values())))
+
+# ---- 2. Build a new SharedServices zone ---------------------------
+shared_builder = CZOABuilder("SharedServices")
+shared_app = Application("SharedApp", zone=shared_builder.root)
+cross_refer = shared_app.add_operation(Operation("cross_refer"))
+shared_builder.root.add_application(shared_app)
+shared_builder.root.add_role(
+    Role("CrossReferrer", zone=shared_builder.root,
+         base_permissions=[cross_refer])
+)
+
+# ---- 3. Federate under a new parent authority ---------------------
+fed = FederationBuilder("MergedHealthAuthority")
+fed.adopt_subsystem(region_a, name="LegacyRegionA")
+fed.adopt_subsystem(region_b, name="LegacyRegionB")
+fed.adopt_subsystem(shared_builder, name="SharedServices")
+
+# ---- 4. Shared compliance policy at the parent --------------------
+fed.share_constraint("""
+    signature {
+        sort User;
+        predicate prescribe(u: User);
+        predicate dispense(u: User);
+    }
+    forall u: User . not (prescribe(u) and dispense(u))
+""")
+
+# ---- 5. Cross-zone integration relation ---------------------------
+fed.integrate(
+    from_zone=region_a,
+    to_zone=region_b,
+    gamma=[
+        (region_a.roles["AttendingPhysician"],
+         region_b.roles["ConsultingSpecialist"],
+         0.8),
+    ],
+    shared_constraints=[
+        # Both regions must respect the shared privacy policy
+        """forall u: User . not (prescribe(u) and dispense(u))""",
+    ],
+    cross_zone_daemons=[VocabularyDriftDaemon(region_a, region_b)],
+    embedding_alignment=True,
+)
+
+# ---- 6. Users and decisions ---------------------------------------
+engine = fed.permission_engine
+
+alice = User("alice", roles={"AttendingPhysician"})
+fed.root.add_user(alice)
+region_a.add_user(alice)
+
+bob = User("bob", roles={"ConsultingSpecialist"})
+fed.root.add_user(bob)
+region_b.add_user(bob)
+
+# Alice can view patients in Region A (native access).
+print("A:", engine.decide(alice, region_a.operations["view_patient"],
+                           region_a).name)   # ALLOW
+
+# Alice cannot view patients in Region B (no cross-region mapping).
+print("B:", engine.decide(alice, region_b.operations["view_patient"],
+                           region_b).name)   # DENY
+
+# After adding a cross-region γ mapping, Alice gains access.
+fed.integrate(
+    from_zone=region_a,
+    to_zone=region_b,
+    gamma=[(region_a.roles["AttendingPhysician"],
+            region_b.roles["ConsultingSpecialist"],
+            1.0)],
+)
+# Alice's AttendingPhysician role now transfers to the consulting role.
+print("B after mapping:",
+      engine.decide(alice, region_b.operations["view_patient"],
+                    region_b).name)   # ALLOW
+```
+
+### What these examples demonstrate
+
+- **Recursive zones** — region → hospital → emergency/ICU, and region → legacy EMR.
 - **Seniority inheritance** — SeniorNurse inherits Nurse's permissions.
 - **Separation of duty** — no user can both prescribe and dispense.
-- **Neural component** — sepsis predictor trained on synthetic vitals.
+- **Neural components** — sepsis predictor trained on synthetic vitals.
 - **Hierarchical daemons** — SurgeDaemon signals DirectorDaemon, which dynamically grants a permission.
-- **Adaptive access control** — Bob's effective permissions change in real time.
-- **Audit trail** — every decision is recorded.
+- **Adapter zones** — legacy EMRs wrapped without modification.
+- **Federation** — two legacy regions plus a new shared service, composed under a shared parent.
+- **Cross-zone integration** — γ mappings enable cross-region access; shared constraints impose unified policy.
+- **Embedding alignment** — semantic equivalence between roles discovered automatically.
+- **Integration soundness** — the composed system preserves each subsystem's invariants.
 
 ---
 
-## 16. Cookbook
+## 17. Cookbook
 
 ### Find all zones where a user has a role
 
@@ -1484,7 +1819,6 @@ def zones_with_role(user, role_name):
     return [z for z in builder.root.walk()
             if role_name in user.roles and role_name in z.roles]
 
-# Example
 print(zones_with_role(bob, "SeniorNurse"))
 ```
 
@@ -1507,28 +1841,9 @@ def least_role(zone, operation):
                   if operation in r.base_permissions]
     if not candidates:
         return None
-    # The role with the fewest juniors is the "least senior"
     return min(candidates, key=lambda r: len(r.junior_roles))
 
-print(least_role(hosp_a, prescribe).name)   # "AttendingPhysician"
-```
-
-### Build a role-hierarchy report
-
-```python
-def role_tree(zone, role, indent=0):
-    print("  " * indent + role.name)
-    for junior in sorted(role.junior_roles, key=lambda r: r.name):
-        role_tree(zone, junior, indent + 1)
-
-# Find top-level roles (those with no seniors)
-def top_roles(zone):
-    all_juniors = {r for role in zone.roles.values()
-                   for r in role.junior_roles}
-    return [r for r in zone.roles.values() if r not in all_juniors]
-
-for role in top_roles(hosp_a):
-    role_tree(hosp_a, role)
+print(least_role(hosp_a, prescribe).name)
 ```
 
 ### Snapshot the system to JSON
@@ -1578,19 +1893,6 @@ def lockdown(user, zone):
 lockdown(bob, hosp_a)
 ```
 
-### Undo a lockdown
-
-```python
-def unlock(user, zone, saved_permissions):
-    for role_name, ops in saved_permissions.items():
-        role = zone.roles.get(role_name)
-        if role is None:
-            continue
-        for op in ops:
-            zone.grant(role, op)
-    user.attributes.set("locked_down", False)
-```
-
 ### Round-trip a zone tree from a config file
 
 ```python
@@ -1614,15 +1916,74 @@ def from_yaml(builder, path):
     build(data["zones"], builder.root)
 ```
 
+### Discover semantically equivalent roles across subsystems
+
+```python
+from czoi import EmbeddingService
+
+emb = EmbeddingService(dimension=128, use_transformer=True)
+
+def find_equivalences(zone_a, zone_b, threshold=0.75):
+    results = []
+    for role_a in zone_a.roles.values():
+        vec_a = emb.embed_role(role_a)
+        for role_b in zone_b.roles.values():
+            vec_b = emb.embed_role(role_b)
+            sim = emb.similarity(vec_a, vec_b)
+            if sim > threshold:
+                results.append((role_a.name, role_b.name, sim))
+    return sorted(results, key=lambda x: -x[2])
+```
+
+### Wrap a legacy system as an adapter zone
+
+```python
+from czoi import AdapterZone, Operation, Role
+
+class MyLegacyAdapter:
+    def __init__(self, conn_string):
+        self.conn = legacy_connect(conn_string)
+
+    def execute(self, operation_name, user_name, kwargs):
+        # Translate CZOI operation to legacy call
+        return self.conn.call(operation_name, kwargs)
+
+    def describe_interface(self):
+        return {
+            "operations": ["view_record", "edit_record"],
+            "roles": ["Viewer", "Editor"],
+        }
+
+legacy = AdapterZone(name="MyLegacy", adapter=MyLegacyAdapter(conn))
+legacy.expose_operations({
+    "view_record": Operation("view_record"),
+    "edit_record": Operation("edit_record"),
+})
+legacy.add_role(Role("Viewer", zone=legacy,
+                     base_permissions=[legacy.operations["view_record"]]))
+```
+
+### Federate two subsystems
+
+```python
+from czoi import FederationBuilder
+
+fed = FederationBuilder("MergedCorp")
+fed.adopt_subsystem(subsystem_a, name="A")
+fed.adopt_subsystem(subsystem_b, name="B")
+fed.share_constraint("""...""")
+fed.integrate(from_zone=subsystem_a, to_zone=subsystem_b,
+              gamma=[(role_a, role_b, 1.0)])
+fed.add_cross_zone_daemon(FederationHealthDaemon())
+```
+
 ---
 
-## 17. Troubleshooting
+## 18. Troubleshooting
 
 ### `ZoneContainmentError: User X must be affiliated with parent Y`
 
 You tried to register a user in a child zone without registering them in the parent first.
-
-**Fix:**
 
 ```python
 # Wrong
@@ -1634,8 +1995,6 @@ for z in emergency.ancestry():
 ```
 
 ### `TypeError: AtomicZone cannot have child zones`
-
-You tried to add a child to a leaf. Make the zone composite (the default) or don't add children to it.
 
 ```python
 # Wrong
@@ -1649,26 +2008,17 @@ leaf.add_zone(builder.add_zone("Child"))
 
 ### `UniLogBridgeError: The unilog-toolkit is required`
 
-Install `unilog-toolkit`:
-
 ```bash
 pip install unilog-toolkit
 ```
 
 ### `UniLangSyntaxError: Unexpected character X`
 
-Check for:
-- Missing semicolons after signature declarations.
-- Comments using `//` instead of `#` or `%`.
-- Unicode operators (`∧` instead of `&` or `and`).
-
-UniLang accepts both ASCII and Unicode, but mixing them mid-expression can confuse the parser.
+Check for: missing semicolons after signature declarations; comments using `//` instead of `#` or `%`; Unicode operators mixed with ASCII mid-expression.
 
 ### `Decision.INCONCLUSIVE` when you expect `DENY`
 
-`INCONCLUSIVE` means "no covering role." `DENY` means "covering role, but a constraint blocked it." These are semantically different — the toolkit distinguishes them on purpose.
-
-If you want boolean semantics, compare explicitly:
+`INCONCLUSIVE` means "no covering role." `DENY` means "covering role, but a constraint blocked it." If you want boolean semantics:
 
 ```python
 allowed = engine.decide(user, op, zone) is Decision.ALLOW
@@ -1676,28 +2026,19 @@ allowed = engine.decide(user, op, zone) is Decision.ALLOW
 
 ### Cache staleness
 
-If a permission change doesn't seem to take effect:
-
 ```python
 # Ensure you used the zone-level method
 hospital.grant(role, operation)   # invalidates cache
 # Not:
 role.grant(operation)             # does NOT invalidate cache
-```
 
-Or invalidate manually:
-
-```python
+# Or invalidate manually:
 builder.permission_engine.invalidate()
 ```
 
 ### Daemon not firing
 
-Check:
-1. You called `builder.add_daemon(daemon)`.
-2. `daemon.enabled` is `True`.
-3. `daemon.interval` is set appropriately.
-4. You're calling `daemon_manager.tick()` (sync) or `daemon_manager.run()` (async).
+Check: (1) you called `builder.add_daemon(daemon)`; (2) `daemon.enabled` is `True`; (3) `daemon.interval` is set appropriately; (4) you're calling `tick()` or `run()`.
 
 ```python
 print(daemon.enabled, daemon.interval)
@@ -1706,10 +2047,7 @@ print([d.name for d in builder.daemon_manager.daemons])
 
 ### Neural model predictions are nonsense
 
-Most commonly:
-1. Features aren't normalised (z-score everything before fitting).
-2. Training data has no signal (verify with a simple baseline first).
-3. Threshold is miscalibrated (start with the auto-calibrated value).
+Most commonly: features aren't normalised (z-score everything before fitting); training data has no signal; or threshold is miscalibrated.
 
 ```python
 print(f"Mean positive score: {X_pos.mean(axis=0)}")
@@ -1717,61 +2055,108 @@ print(f"Mean negative score: {X_neg.mean(axis=0)}")
 # The two should differ substantially.
 ```
 
+### Integration-specific issues
+
+#### `FederationError: Subsystems have conflicting operations`
+
+Two subsystems are exposing operations with the same qualified name. Rename one or use adapter zones to expose them under distinct prefixes.
+
+```python
+# Rename in the adapter zone
+legacy_hr.expose_operations({
+    "LegacyHR.view_employee": Operation("view_employee"),
+    # Avoid: "view_employee" alone would collide with another subsystem
+})
+```
+
+#### Integration error: role equivalence not discovered
+
+The embedding alignment threshold may be too high, or the two subsystems' vocabularies may be too different for the current embedding model. Lower the threshold, or train the alignment functor with domain-specific positives and negatives.
+
+```python
+emb.train_alignment(
+    positives=[(emb.embed("attending"), emb.embed("physician"))],
+    negatives=[(emb.embed("attending"), emb.embed("payroll"))],
+)
+```
+
+#### Integration validation failed: identity constraint violation
+
+The composed system violates a subsystem's identity constraints. This typically means the shared constraints at the parent level are incompatible with a subsystem's local constraints. Use `verify_integration(fed)` to identify the specific constraint.
+
+```python
+from czoi.federation import verify_integration
+report = verify_integration(fed)
+print(report.details())
+```
+
 ---
 
-## 18. Best Practices
+## 19. Best Practices
 
 ### Structure
 
 - **Model the organisation, not the code.** If the HR department is a zone, so be it — even if it only has two users.
-- **Use atomic zones generously.** Any zone without children should be `atomic=True`. This catches accidental additions early.
-- **Name operations with `verb_noun`.** `view_patient`, `process_payroll`, `disconnect_feeder`. Not `viewPatient` or `VP`.
+- **Use atomic zones generously.** Any zone without children should be `atomic=True`.
+- **Name operations with `verb_noun`.** `view_patient`, `process_payroll`, not `viewPatient` or `VP`.
 
 ### Roles
 
-- **One role per job function.** If you find yourself writing `role_that_can_do_X_and_Y`, you probably want a seniority relation instead.
-- **Prefer seniority over duplication.** If Doctor and SeniorDoctor share 90 % of their permissions, model the shared permissions on Doctor and give SeniorDoctor its extra permissions.
-- **Keep role hierarchies shallow.** Depth 3 is usually enough. Deeper hierarchies are hard to reason about.
+- **One role per job function.** If you find yourself writing `role_that_can_do_X_and_Y`, use a seniority relation instead.
+- **Prefer seniority over duplication.**
+- **Keep role hierarchies shallow.** Depth 3 is usually enough.
 
 ### Operations
 
-- **Atomic operations, not composite actions.** `submit_grade` is atomic; `finalise_semester` is not (it's a workflow).
-- **Fine granularity for security-critical operations.** If you audit `edit_record` you can't tell whether the edit was a typo fix or a fraud. Prefer `edit_salary`, `edit_address`, `edit_bank_account`.
-- **Application grouping is for humans, not for permissions.** Applications exist to organise the UI and deployment; permissions are always on operations.
+- **Atomic operations, not composite actions.** `submit_grade` is atomic; `finalise_semester` is not.
+- **Fine granularity for security-critical operations.** Prefer `edit_salary`, `edit_address`, `edit_bank_account`.
+- **Application grouping is for humans, not for permissions.**
 
 ### Constraints
 
-- **Encode policy, not implementation.** "A user cannot both prescribe and dispense" is policy. "If `user.shift == 'day'` and `time.hour > 8`" is implementation. Prefer the former.
-- **One constraint per rule.** Don't combine unrelated constraints into a single UniLang formula.
-- **Test constraints in isolation.** Write a unit test for each constraint that verifies it blocks what it should and allows what it should.
+- **Encode policy, not implementation.** "A user cannot both prescribe and dispense" is policy.
+- **One constraint per rule.**
+- **Test constraints in isolation.**
 
 ### Daemons
 
-- **One responsibility per daemon.** `BatteryDaemon` monitors battery. `OvercurrentDaemon` monitors current. Don't combine.
-- **Signal, don't act.** A daemon's `monitor()` should emit signals; the parent daemon's `on_signal()` should act. This keeps the tree composable.
-- **Use per-daemon intervals.** A battery check might need 500 ms; a compliance audit might need 60 s. Don't force a single interval.
+- **One responsibility per daemon.**
+- **Signal, don't act.** A daemon's `monitor()` should emit signals; the parent's `on_signal()` should act.
+- **Use per-daemon intervals.**
 
 ### Neural components
 
-- **Normalise features.** Always. The autoencoder especially.
-- **Fit on normal data only.** Anomaly detection works by learning the normal manifold; including anomalies in training destroys the signal.
-- **Version your models.** Record which model produced which decision in the audit trail. This is essential for post-incident review.
+- **Normalise features.** Always.
+- **Fit on normal data only** for anomaly detection.
+- **Version your models.** Record which model produced which decision in the audit trail.
 
 ### Testing
 
-- **Test with a fresh builder per test.** Don't share state across tests.
-- **Test `Decision.ALLOW`, `Decision.DENY`, and `Decision.INCONCLUSIVE` separately.** They mean different things.
-- **Test constraints explicitly.** A test that only exercises `ALLOW` doesn't prove the `DENY` path works.
+- **Test with a fresh builder per test.**
+- **Test `ALLOW`, `DENY`, and `INCONCLUSIVE` separately.**
+- **Test constraints explicitly.**
+
+### Integration
+
+- **Start with adapter zones, not refactoring.** Wrap legacy systems as-is. This preserves their certifications and gives you a working baseline before any internal change.
+- **Use the alignment functor to discover role equivalence, but review manually.** Automated discovery finds candidates; a human decides which mappings to apply.
+- **Prefer shared constraints over duplicated ones.** If two subsystems need the same rule, share it at the parent level rather than duplicating it.
+- **Add cross-zone daemons from day one.** They detect integration drift before it becomes an incident.
+- **Verify integration soundness programmatically.** Run `verify_integration(fed)` after every integration change.
+- **Document the integration relation.** The (γ, C, δ, ε) tuple is the contract between subsystems; treat it like an API contract.
+- **Preserve local autonomy explicitly.** Don't impose a shared constraint unless it's genuinely organization-wide. Local autonomy is not a cost to minimize; it's a property to protect.
+- **Test integration across subsystem boundaries.** Every cross-zone decision should have at least one test that exercises the path in both directions.
 
 ### Performance
 
-- **Cache is your friend.** For production workloads, keep `cache_enabled=True` and monitor `stats()["hits"]`.
-- **Avoid wide fan-outs.** If a role has 10 000 base permissions, every decision walks them. Prefer smaller roles with seniority relations.
-- **Deep trees are fine.** Recursion depth adds ~0.02 ms per level. Trees of depth 10+ are common and fast.
+- **Cache is your friend.** Keep `cache_enabled=True` and monitor `stats()["hits"]`.
+- **Avoid wide fan-outs.** Prefer smaller roles with seniority relations.
+- **Deep trees are fine.** Recursion depth adds ~0.02 ms per level.
+- **Cross-zone decisions add ~0.1 ms per subsystem boundary crossed.** For deeply federated systems, cache frequently-used cross-zone decisions at the federation level.
 
 ---
 
-## 19. API Reference
+## 20. API Reference
 
 ### `CZOABuilder`
 
@@ -1791,7 +2176,28 @@ print(f"Mean negative score: {X_neg.mean(axis=0)}")
 | `.register_predicate(name, fn)` | Register a custom predicate for constraints |
 | `.add_daemon(daemon)` | Register a daemon with the root and manager |
 
-### `ZoneBase` (base for `AtomicZone`, `CompositeZone`)
+### `FederationBuilder` ✨ *(new)*
+
+| Method | Description |
+|---|---|
+| `FederationBuilder(name)` | Create a federation with a fresh parent zone |
+| `.adopt_subsystem(subsystem, name=None)` | Adopt a subsystem (native CZOI, adapter zone, or federation) under the parent |
+| `.share_constraint(unilang)` | Impose a shared constraint at the parent level |
+| `.integrate(from_zone, to_zone, gamma=[], shared_constraints=[], cross_zone_daemons=[], embedding_alignment=False)` | Define a cross-zone integration relation |
+| `.add_cross_zone_daemon(daemon)` | Register a daemon that observes subsystem interactions |
+| `.root` | The federation's root zone |
+| `.permission_engine` | The shared `PermissionEngine` |
+
+### `AdapterZone` ✨ *(new)*
+
+| Method | Description |
+|---|---|
+| `AdapterZone(name, parent=None, adapter=None)` | Wrap a legacy or external system |
+| `.adapter` | The adapter instance (implements `AdapterProtocol`) |
+| `.expose_operations(dict)` | Declare the CZOI-facing operations |
+| `.delegate(operation, user, **kwargs)` | Forward a call to the underlying adapter |
+
+### `ZoneBase`
 
 | Attribute / Method | Description |
 |---|---|
@@ -1953,6 +2359,21 @@ NeuralContribution(fn: Callable[[user, operation, zone, base], Decision])
 
 Attach with `builder.permission_engine.set_neural_contribution(...)`.
 
+### Integration utilities ✨ *(new)*
+
+```python
+from czoi.federation import verify_integration, discover_role_equivalences
+
+# Verify that a federation is soundly integrated
+report = verify_integration(fed)
+print(report.summary())
+
+# Discover role equivalences across two subsystems
+equivalences = discover_role_equivalences(zone_a, zone_b,
+                                          embedding_service=emb,
+                                          threshold=0.75)
+```
+
 ### Exceptions
 
 | Exception | Raised when |
@@ -1968,17 +2389,20 @@ Attach with `builder.permission_engine.set_neural_contribution(...)`.
 | `SafetyViolation` | Adaptive update violated a safety invariant |
 | `UniLogBridgeError` | UniLog toolkit unavailable |
 | `UniLangSyntaxError` | Parse error in UniLang source |
-| `UniLangSemanticError` | Undefined sort, arity mismatch, etc. |
+| `UniLangSemanticError` | Undefined sort, arity mismatch |
 | `UniLangEvaluationError` | Runtime evaluation error |
+| `FederationError` ✨ | Federation composition failure (conflicting operations, incompatible constraints, etc.) |
+| `AdapterError` ✨ | Adapter zone contract violation (missing method, unknown operation, etc.) |
 
 ---
 
 ## Getting Help
 
-- **Examples**: the `examples/` directory in the repository.
-- **Tests**: `tests/test_basic.py` shows every core feature in use.
+- **Examples**: the `examples/` directory in the repository, including `legacy_adapter.py` and `post_merger.py`.
+- **Tests**: `tests/test_basic.py` covers core behaviour; `tests/test_federation.py` covers integration.
 - **Issues**: [github.com/hongxueharriswang/czoi-toolkit/issues](https://github.com/hongxueharriswang/czoi-toolkit/issues)
 - **UniLog**: [github.com/hongxueharriswang/unilog-toolkit](https://github.com/hongxueharriswang/unilog-toolkit)
+- **Tutorial**: the companion [CZOA/CZOI Tutorial](czoi-tutorial.md) teaches the theory and practice, including Chapter 15 on integrating heterogeneous systems.
 
 ---
 
